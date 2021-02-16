@@ -1,0 +1,724 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+import copy
+#import scipy
+from collections import Counter
+from matplotlib import pyplot as plt
+#from scipy.interpolate import make_interp_spline
+
+"""
+Code written Mar 2020.
+Scans iFCI singlet+triplet output and generates difference plot according to 
+scanning screening variable.
+Execute as: diffdatagen ifci_singlet.out ifci_triplet.out
+"""
+
+n=0
+e_start_1=[]
+e_start_2=[]
+e_end_1=[]
+e_end_2=[]
+e_energies_1=[]
+e_energies_2=[]
+constit_start_1=[]
+constit_start_2=[]
+constit_end_1=[]
+constit_end_2=[]
+constit_count_1=[]
+constit_count_2=[]
+n3_constit_1=[]
+n3_constit_2=[]
+n4_constit_1=[]
+n4_constit_2=[]
+n_wise_terms_1=[]
+n_wise_terms_2=[]
+n_wise_energies_1=[]
+n_wise_energies_2=[]
+n_wise_totals_1=[]
+n_wise_totals_2=[]
+e_ref_1=0
+e_ref_2=0
+next_line=False
+
+in_name_1 = sys.argv[1]
+in_name_2 = sys.argv[2]
+if in_name_1.endswith('.out'):
+    in_name_1 = in_name_1[:-4]
+if in_name_2.endswith('.out'):
+    in_name_2 = in_name_2[:-4]
+print ('Input files:',in_name_1,in_name_2)
+
+
+# Read files, set line flags, and search for energies
+#print ('---Singlet Scan---')
+with open(sys.argv[1]) as output_file_1:
+    for i,line in enumerate(output_file_1):
+        if ('IFCI_TUPLES') in line:
+            nlevel_split = line.split()
+            n = int(nlevel_split[1])
+            print ('Highest increment level detected as', n)
+        if ('Now Correlate') in line:
+            n_wise_terms_1.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start_1.append(i)
+        #if (next_line):
+        #    total_split = line.split()
+        #    n_wise_totals_1.append(float(total_split[-1]))
+        #    next_line = False
+        for inc in range(1,n+1):
+            if ('E%icx:' % inc) in line:
+                e_start_1.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end_1.append(i)
+        #        next_line = True
+            if ('E%i total E' % inc) in line:
+                e_split = line.split()
+                n_wise_energies_1.append(float(e_split[3]))
+        if ('Eref(CAS-CI)') in line:
+            e_ref_split = line.split()
+            e_ref_1 = float(e_ref_split[1])
+#print (n_wise_energies_1)
+
+#print ('---Triplet Scan---')
+with open(sys.argv[2]) as output_file_2:
+    for i,line in enumerate(output_file_2):
+        if ('Now Correlate') in line:
+            n_wise_terms_2.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start_2.append(i)
+        #if (next_line):
+        #    total_split = line.split()
+        #    n_wise_totals_2.append(float(total_split[-1]))
+        #    next_line = False
+        for inc in range(1,n+1):
+            if ('E%icx:' % inc) in line:
+                e_start_2.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end_2.append(i)
+        #        next_line = True
+            if ('E%i total E' % inc) in line:
+                e_split = line.split()
+                n_wise_energies_2.append(float(e_split[3]))
+        if ('Eref(CAS-CI)') in line:
+            e_ref_split = line.split()
+            e_ref_2 = float(e_ref_split[1])
+#print (n_wise_energies_2)
+
+for i in range(n-2):
+    constit_end_1.append(constit_start_1[i] + e_end_1[i+2] - e_start_1[i+2])
+    constit_count_1.append(e_end_1[i+2] - e_start_1[i+2] - 1)
+    constit_end_2.append(constit_start_2[i] + e_end_2[i+2] - e_start_2[i+2])
+    constit_count_2.append(e_end_2[i+2] - e_start_2[i+2] - 1)
+print (constit_count_1)
+
+# Put energies in array and total
+for inc in range(1,n+1):
+    e_energies_1.append(np.loadtxt(sys.argv[1], usecols=-1, skiprows=e_start_1[inc-1]+1, max_rows=e_end_1[inc-1]-(e_start_1[inc-1]+1)))
+    e_energies_2.append(np.loadtxt(sys.argv[2], usecols=-1, skiprows=e_start_2[inc-1]+1, max_rows=e_end_2[inc-1]-(e_start_2[inc-1]+1)))
+#for i in e_energies_1:
+#    print(i)
+for inc in range(len(e_energies_1)):
+    n_wise_totals_1.append(np.sum(e_energies_1[inc]))
+    n_wise_totals_2.append(np.sum(e_energies_2[inc]))
+
+# Set energies that are zeros to really small
+for i in range(len(e_energies_1)):
+    e_energies_1[i] = np.where((abs(e_energies_1[i]) > 1e-9), e_energies_1[i], -1e-9)
+for i in range(len(e_energies_2)):
+    e_energies_2[i] = np.where((abs(e_energies_2[i]) > 1e-9), e_energies_2[i], -1e-9)
+
+# Put pairwise constituents into array
+n3_constit_1.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,4,5,6,-1), skiprows=constit_start_1[0]+1, max_rows=constit_count_1[0]))
+n3_constit_1 = np.asarray(n3_constit_1).reshape((constit_count_1[0],7))
+n3_constit_2.append(np.loadtxt(sys.argv[2], usecols=(0,1,2,4,5,6,-1), skiprows=constit_start_2[0]+1, max_rows=constit_count_2[0]))
+n3_constit_2 = np.asarray(n3_constit_2).reshape((constit_count_2[0],7))
+if n >= 4:
+    n4_constit_1.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,3,5,6,7,8,-1), skiprows=constit_start_1[1]+1, max_rows=constit_count_1[1]))
+    n4_constit_1 = np.asarray(n4_constit_1).reshape((constit_count_1[1],9))
+    n4_constit_2.append(np.loadtxt(sys.argv[2], usecols=(0,1,2,3,5,6,7,8,-1), skiprows=constit_start_2[1]+1, max_rows=constit_count_2[1]))
+    n4_constit_2 = np.asarray(n4_constit_2).reshape((constit_count_2[1],9))
+e_energies_1 = np.asarray(e_energies_1)
+e_energies_2 = np.asarray(e_energies_2)
+
+# Print body quantities found
+print ('--Singlet Bodies--')
+for inc in range(len(e_energies_1)):
+    print ('Increment',inc+1,'# of bodies =',len(e_energies_1[inc]))
+if n == 3:
+    print ('Totals:',n_wise_terms_1[0],'pairs,',n_wise_terms_1[1],'triads')
+elif n == 4:
+    print ('Totals:',n_wise_terms_1[0],'pairs,',n_wise_terms_1[1],'triads,',n_wise_terms_1[2],'quads')
+
+print ('--Triplet Bodies--')
+for inc in range(len(e_energies_2)):
+    print ('Increment',inc+1,'# of bodies =',len(e_energies_2[inc]))
+if n == 3:
+    print ('Totals:',n_wise_terms_2[0],'pairs,',n_wise_terms_2[1],'triads')
+elif n == 4:
+    print ('Totals:',n_wise_terms_2[0],'pairs,',n_wise_terms_2[1],'triads,',n_wise_terms_2[2],'quads')
+
+homo_tuple=np.max(n3_constit_1)
+print ('homotuple',homo_tuple)
+
+#n3_cfo_1=0
+#n3_cfo_1=0
+#n3_all_1=0
+#n3_cfo_2=0
+#n3_cfo_2=0
+#n3_all_2=0
+
+#n4_cfo_1=0
+#n4_cfo_1=0
+#n4_all_1=0
+#n4_cfo_2=0
+#n4_cfo_2=0
+#n4_all_2=0
+
+
+n3_all_1 = sum(body[-1] for body in n3_constit_1)
+n3_all_2 = sum(body[-1] for body in n3_constit_2)
+n4_all_1 = sum(body[-1] for body in n4_constit_1)
+n4_all_2 = sum(body[-1] for body in n4_constit_2)
+n3_abs_all_1 = sum(abs(body[-1]) for body in n3_constit_1)
+n3_abs_all_2 = sum(abs(body[-1]) for body in n3_constit_2)
+n4_abs_all_1 = sum(abs(body[-1]) for body in n4_constit_1)
+n4_abs_all_2 = sum(abs(body[-1]) for body in n4_constit_2)
+
+#cfo_constit_1=[]
+#cfo_constit_2=[]
+
+#for i,body in enumerate(n3_constit_1):
+#    if homo_tuple in body[0:3]:
+#        cfo_total_1+=n3_constit_1[i][-1]
+#        cfo_constit_1.append(n3_constit_1[i])
+#        cfo_count_1+=1
+#    all_total_1+=n3_constit_1[i][-1]
+#for i,body in enumerate(n3_constit_2):
+#    if homo_tuple in body[0:3]:
+#        cfo_total_2+=n3_constit_2[i][-1]
+#        cfo_constit_2.append(n3_constit_2[i])
+#        cfo_count_2+=1
+#    all_total_2+=n3_constit_2[i][-1]
+#
+#print ('cfo_count:',cfo_count_1)
+#
+#print ('State 1:\nTotal 3-body energy:',all_total_1,'\nCFO 3-body energy:',cfo_total_1)
+#print ('State 2:\nTotal 3-body energy:',all_total_2,'\nCFO 3-body energy:',cfo_total_2)
+#print ('Difference in 3-body energies:',(all_total_2-all_total_1)*627.51,'kcal/mol\nDifference in CFO 3-body energies:',(cfo_total_2-cfo_total_1)*627.51,'kcal/mol')
+
+
+def cio_scan(n,choice_ary,constit_ary):
+    cio=0
+    cio_count=0
+    found=False
+    for i,body in enumerate(constit_ary):
+        found = False
+        for j in choice_ary:
+            if j in body[0:n] and not found:
+                cio+=constit_ary[i][-1]
+                cio_count+=1
+                found=True
+    return cio,cio_count
+
+def cfo_scan(n,constit_ary):
+    return (cio_scan(n,[np.max(constit_ary)],constit_ary))
+
+def abs_cio_scan(n,choice_ary,constit_ary):
+    cio=0
+    cio_count=0
+    found=False
+    for i,body in enumerate(constit_ary):
+        found = False
+        for j in choice_ary:
+            if j in body[0:n] and not found:
+                cio+=abs(constit_ary[i][-1])
+                cio_count+=1
+                found=True
+    return cio,cio_count
+
+def abs_cfo_scan(n,constit_ary):
+    return (abs_cio_scan(n,[np.max(constit_ary)],constit_ary))
+
+#block = [homo_tuple]
+#block_1 = [67,69] # a5g d block
+#block_2 = [64,68,69] # a2g d block
+#block_1 = [54,51,52,53] # a5g dsig block
+#block_2 = [54,53,52,51] # a2g dsig block
+block_1 = [64, 60, 61, 62, 50, 49, 48, 46, 47] # a5g pi block
+block_2 =[65, 62, 61, 60, 50, 49, 48, 47, 46] # a2g pi block
+#block_1 = [58, 59, 65, 56, 55, 63, 57, 66, 39, 42, 43, 41, 44, 40, 38, 45, 35, 34, 37, 36, 32, 30, 28, 33, 31, 26, 29, 27] # a5g sigma block
+#block_2 = [67, 66, 63, 59, 58, 57, 56, 55, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26] # a2g sigma block
+
+n3_cfo_1,n3_cfo_count_1 = cfo_scan(3,n3_constit_1)
+n3_cfo_2,n3_cfo_count_2 = cfo_scan(3,n3_constit_2)
+n3_cio_1,n3_cio_count_1 = cio_scan(3,block_1,n3_constit_1)
+n3_cio_2,n3_cio_count_2 = cio_scan(3,block_2,n3_constit_2)
+total_gap_kc = (n3_all_2 - n3_all_1)*627.51
+cfo_gap_kc = (n3_cfo_2 - n3_cfo_1)*627.51
+cio_gap_kc = (n3_cio_2 - n3_cio_1)*627.51
+
+print ('CIO block scanned for',in_name_1,':',block_1)
+print ('CIO block scanned for',in_name_2,':',block_2)
+print ('State',in_name_1,'3-body energies:\n  Total:',n3_all_1,'\n  CFO:',n3_cfo_1,'\n  CIO:',n3_cio_1)
+print ('State',in_name_2,'3-body energies:\n  Total:',n3_all_2,'\n  CFO:',n3_cfo_2,'\n  CIO:',n3_cio_2)
+print ('Differences (kcal/mol):\n  Total:',total_gap_kc,'\n  CFO:',cfo_gap_kc,'\n  CIO:',cio_gap_kc)
+print ('State',in_name_1,'3-body counts:\n  CFO:',n3_cfo_count_1,'\n  CIO:',n3_cio_count_1)
+print ('State',in_name_2,'3-body counts:\n  CFO:',n3_cfo_count_2,'\n  CIO:',n3_cio_count_2)
+
+n4_cfo_1,n4_cfo_count_1 = cfo_scan(4,n4_constit_1)
+n4_cfo_2,n4_cfo_count_2 = cfo_scan(4,n4_constit_2)
+n4_cio_1,n4_cio_count_1 = cio_scan(4,block_1,n4_constit_1)
+n4_cio_2,n4_cio_count_2 = cio_scan(4,block_2,n4_constit_2)
+total_gap_kc = (n4_all_2 - n4_all_1)*627.51
+cfo_gap_kc = (n4_cfo_2 - n4_cfo_1)*627.51
+cio_gap_kc = (n4_cio_2 - n4_cio_1)*627.51
+
+print ('CIO block scanned for',in_name_1,':',block_1)
+print ('CIO block scanned for',in_name_2,':',block_2)
+print ('State',in_name_1,'4-body energies:\n  Total:',n4_all_1,'\n  CFO:',n4_cfo_1,'\n  CIO:',n4_cio_1)
+print ('State',in_name_2,'4-body energies:\n  Total:',n4_all_2,'\n  CFO:',n4_cfo_2,'\n  CIO:',n4_cio_2)
+print ('Differences (kcal/mol):\n  Total:',total_gap_kc,'\n  CFO:',cfo_gap_kc,'\n  CIO:',cio_gap_kc)
+print ('State',in_name_1,'4-body counts:\n  CFO:',n4_cfo_count_1,'\n  CIO:',n4_cio_count_1)
+print ('State',in_name_2,'4-body counts:\n  CFO:',n4_cfo_count_2,'\n  CIO:',n4_cio_count_2)
+
+n3_abs_cfo_1,n3_abs_cfo_count_1 = abs_cfo_scan(3,n3_constit_1)
+n3_abs_cfo_2,n3_abs_cfo_count_2 = abs_cfo_scan(3,n3_constit_2)
+n3_abs_cio_1,n3_abs_cio_count_1 = abs_cio_scan(3,block_1,n3_constit_1)
+n3_abs_cio_2,n3_abs_cio_count_2 = abs_cio_scan(3,block_2,n3_constit_2)
+
+print ('State',in_name_1,'Absolute 3-body energies:\n  Total:',n3_abs_all_1,'\n  CFO:',n3_abs_cfo_1,'\n  CIO:',n3_abs_cio_1)
+print ('State',in_name_2,'Absolute 3-body energies:\n  Total:',n3_abs_all_2,'\n  CFO:',n3_abs_cfo_2,'\n  CIO:',n3_abs_cio_2)
+
+n4_abs_cfo_1,n4_abs_cfo_count_1 = abs_cfo_scan(4,n4_constit_1)
+n4_abs_cfo_2,n4_abs_cfo_count_2 = abs_cfo_scan(4,n4_constit_2)
+n4_abs_cio_1,n4_abs_cio_count_1 = abs_cio_scan(4,block_1,n4_constit_1)
+n4_abs_cio_2,n4_abs_cio_count_2 = abs_cio_scan(4,block_2,n4_constit_2)
+
+print ('State',in_name_1,'Absolute 4-body energies:\n  Total:',n4_abs_all_1,'\n  CFO:',n4_abs_cfo_1,'\n  CIO:',n4_abs_cio_1)
+print ('State',in_name_2,'Absolute 4-body energies:\n  Total:',n4_abs_all_2,'\n  CFO:',n4_abs_cfo_2,'\n  CIO:',n4_abs_cio_2)
+
+#n3_cio_1,n3_cio_count_1 = cio_scan(3,block_1,n3_constit_1)
+#n3_cio_2,n3_cio_count_2 = cio_scan(3,block_2,n3_constit_2)
+#total_gap_kc = (all_total_2 - all_total_1)*627.51
+#cfo_gap_kc = (cfo_total_2 - cfo_total_1)*627.51
+#cio_gap_kc = (n3_cio_2 - n3_cio_1)*627.51
+#
+#print ('CIO block scanned for',in_name_1,':',block_1)
+#print ('CIO block scanned for',in_name_2,':',block_2)
+#print ('State',in_name_1,'3-body energies:\nTotal:',all_total_1,'\nCFO:',cfo_total_1,'\nCIO:',n4_cio_1)
+#print ('State',in_name_2,'3-body energies:\nTotal:',all_total_2,'\nCFO:',cfo_total_2,'\nCIO:',n4_cio_2)
+#print ('Differences (kcal/mol):\nTotal:',total_gap_kc,'\nCFO:',cfo_gap_kc,'\nCIO:',cio_gap_kc)
+
+# Put energies from array in text file
+with open('Encx_singlet.txt','w') as f:
+    for inc in range(len(e_energies_1)):
+        N=inc+1
+        f.write('Increment %s\n' % N)
+        for b in range(len(e_energies_1[inc])):
+            f.write('%s\n' % e_energies_1[inc][b])
+        f.write('\n')
+        np.savetxt('data/E%scx_1.csv' % str(inc+1),e_energies_1[inc],delimiter=',')
+with open('Encx_triplet.txt','w') as f:
+    for inc in range(len(e_energies_2)):
+        N=inc+1
+        f.write('Increment %s\n' % N)
+        for b in range(len(e_energies_2[inc])):
+            f.write('%s\n' % e_energies_2[inc][b])
+        f.write('\n')
+        np.savetxt('data/E%scx_2.csv' % str(inc+1),e_energies_2[inc],delimiter=',')
+
+def magnitude(x):
+    return np.log10(np.absolute(x))
+
+ref_gap=(e_ref_2-e_ref_1)*2.1947e5
+ref_gap_kc=(e_ref_2-e_ref_1)*627.51
+print ('Reference E:',ref_gap_kc,'kcal/mol')
+
+#gaps=(np.array(n_wise_energies_2)-np.array(n_wise_energies_1))*2.1947e5
+#for inc in range(1,n+1):
+#    print (('E%i total E:' % inc),gaps[inc-1])
+
+n_wise_gaps = np.asarray(n_wise_totals_2)-np.asarray(n_wise_totals_1)
+n_wise_gaps_wn=np.asarray(n_wise_gaps)*2.1947e5
+n_wise_gaps_kc=np.asarray(n_wise_gaps)*627.51
+#print ('n_wise_totals_1:',n_wise_totals_1)
+#print ('n_wise_totals_2:',n_wise_totals_2)
+print ('n-wise gaps:',n_wise_gaps,'Ha\n            ',n_wise_gaps_wn,'cm-1\n            ',n_wise_gaps_kc,'kcal/mol  (individual)')
+#gaps=(np.array(n_wise_totals_2)-np.array(n_wise_totals_1))*2.1947e5
+for i in range(len(n_wise_gaps)-1,0,-1):
+    n_wise_gaps[i] += np.sum(n_wise_gaps[:i])
+gaps_wn=np.asarray(n_wise_gaps)*2.1947e5
+gaps_kc=np.asarray(n_wise_gaps)*627.51
+print ('n-wise gaps:',n_wise_gaps,'Ha\n            ',gaps_wn,'cm-1\n            ',gaps_kc,'kcal/mol  (summed)')
+#print ('gaps_wn:',gaps_wn)
+for inc in range(0,n):
+    print (('E%i total gap:' % (inc+1)),gaps_wn[inc]+ref_gap,'cm-1   ',gaps_kc[inc]+ref_gap_kc,'kcal/mol')
+#print ('CFO total E:',
+
+#for i in range(len(n_wise_totals_1)):
+#    print (n_wise_totals_1[i],n_wise_totals_2[i],(n_wise_totals_2[i]-n_wise_totals_1[i])*2.1947e5)
+#beg_tot_gap = (n_wise_totals_2[0]-n_wise_totals_1[0])*2.1947e5
+#end_tot_gap = (n_wise_totals_2[-1]-n_wise_totals_1[-1])*2.1947e5
+#print ('Total (beg):',beg_tot_gap)
+#print ('Total (end):',end_tot_gap)
+
+cfo_gap_wn = (n3_cfo_2-n3_cfo_1)*2.1947e5+gaps_wn[1]
+print ('CFO total E:',cfo_gap_wn+ref_gap)
+
+np.save(os.getcwd()+'/save.npy',n_wise_gaps,allow_pickle=False)
+n_wise_gaps = np.load(os.getcwd()+'/save.npy',allow_pickle=False)
+
+# Histogram for n=3 energies (T-S) under thresh
+# thresh_scan for histograms per threshold
+# narrow for over/under plot
+
+#thresh_scan = np.logspace(-5,-2,7) # good for full range
+thresh_scan = np.logspace(-4,-2,3) # good for testing
+
+nrw_bottom = -1
+nrw_top = -6
+#nrw_bottom = -2
+#nrw_top = -5
+#nrw_step = 1    # testing range
+#nrw_step = 0.1  # good range
+#nrw_step = 0.05 # excessive range
+nrw_step = 0.01 # ridiculously excessive range
+#nrw_step = 0.001 # so i heard u liek excessive...
+nrw_points = int(1+(nrw_bottom-nrw_top)/nrw_step)
+print ('gap step:',nrw_step,'gap_points',nrw_points)
+thresh_scan_narrow = np.logspace(nrw_top,nrw_bottom,nrw_points) 
+
+bins3 = np.linspace(1,9,17)
+
+def diffloop(n, n_constit_1, n_constit_2): 
+
+    print ('Now doing n =',n,'loop!')
+
+    sums_over_1 = [] 
+    sums_over_2 = []
+    sums_under_1 = []
+    sums_under_2 = []
+    count_over_1 = []
+    count_over_2 = []
+    count_under_1 = []
+    count_under_2 = []
+    trues_container_1 = []
+    trues_container_2 = []
+    body_count_1 = []
+    body_count_2 = []
+    n_over_gaps_per_scale = []
+    n_under_gaps_per_scale = []
+    n_raw_over_gaps = []
+    body_count_diff = []
+    body_count_diff_total = []
+    
+    cfo_trues_container_1 = []
+    cfo_trues_container_2 = []
+    cfo_sums_over_1 = []
+    cfo_sums_over_2 = []
+    cfo_count_over_1 = []
+    cfo_count_over_2 = []
+    cfo_over_gaps_per_scale = []
+    cfo_body_count_1 = []
+    cfo_body_count_2 = []
+    cfo_body_count_diff = []
+    cfo_body_count_diff_total = []
+    cfo_raw_over_gaps = []
+    
+    over_thresh_1 = []
+    under_thresh_1 = []
+    over_thresh_2 = []
+    under_thresh_2 = []
+
+    with open(('bodies_per_cutoff_n%s_1.txt' % n),'w') as f:
+        f.write('--Singlet Removed Bodies Per Cutoff--\n')
+    
+    with open(('bodies_per_cutoff_n%s_2.txt' % n),'w') as f:
+        f.write('--Triplet Removed Bodies Per Cutoff--\n')
+
+    if n == 3:
+        top_index = 6
+    elif n == 4:
+        top_index = 8
+    else:
+        print ('problem with n in diff loop')
+        exit()
+    
+    # Loop over cutoff scan to build plots with narrow discretization
+    for step,i_thresh in enumerate(thresh_scan_narrow):
+        #print ('current cutoff:',np.around(np.log10(i_thresh),2))
+        n_trues_1 = []
+        for row in range(len(n_constit_1)):
+            #print ('i_thresh:',i_thresh,'row:',row,'n_constit_1[row]',n_constit_1[row])
+            n_include_1 = np.ma.masked_where(n_constit_1[row][n:top_index] > i_thresh, n_constit_1[row][n:top_index])
+            n_trues_1.append(np.sum(n_include_1.mask))
+        n_trues_1 = np.asarray(n_trues_1).reshape((constit_count_1[n-3],1))
+        n_constit_1 = np.hstack((n_constit_1,n_trues_1))
+        trues_container_1.append(n_trues_1)
+        n_trues_2 = []
+        for row in range(len(n_constit_2)):
+            n_include_2 = np.ma.masked_where(n_constit_2[row][n:top_index] > i_thresh, n_constit_2[row][n:top_index])
+            n_trues_2.append(np.sum(n_include_2.mask))
+        n_trues_2 = np.asarray(n_trues_2).reshape((constit_count_2[n-3],1))
+        n_constit_2 = np.hstack((n_constit_2,n_trues_2))
+        trues_container_2.append(n_trues_2)
+    
+        sum_over = 0
+        sum_under = 0
+        count_above = 0
+        count_below = 0
+        cfo_sum_over = 0
+        cfo_count_above = 0
+        for i, energy in enumerate(e_energies_1[n-1]):
+            if n_trues_1[i] >= 2:
+                sum_over += energy
+                count_above += 1
+                if homo_tuple in n_constit_1[i][0:n]:
+                    cfo_sum_over += energy
+                    cfo_count_above +=1
+            else:
+                sum_under += energy
+                count_below += 1
+    
+        sums_over_1.append(sum_over)
+        sums_under_1.append(sum_under)
+        count_over_1.append(count_above)
+        count_under_1.append(count_below)
+        cfo_sums_over_1.append(cfo_sum_over)
+        cfo_count_over_1.append(cfo_count_above)
+        #print (sums_over_1)
+        #print (cfo_sums_over_1)
+        over_thresh_1.append([magnitude(body[top_index]) for body in n_constit_1 if body[top_index+1] >= 2])
+        under_thresh_1.append([magnitude(body[top_index]) for body in n_constit_1 if body[top_index+1] < 2])
+        #print ('cutoff:',np.around(np.log10(i_thresh),2),'shape of over_thresh_1:',np.shape(np.asarray(over_thresh_1[-1])))
+    
+        sum_holder_1 = sum_over
+        cfo_sum_holder_1 = cfo_sum_over
+    
+        n_constit_1 = np.delete(n_constit_1, -1, axis=1)
+    
+        sum_over = 0
+        sum_under = 0
+        count_above = 0
+        count_below = 0
+        cfo_sum_over = 0
+        cfo_count_above = 0
+        for i, energy in enumerate(e_energies_2[n-1]):
+            if n_trues_2[i] >= 2:
+                sum_over += energy
+                count_above += 1
+                if homo_tuple in n_constit_2[i][0:n]:
+                    cfo_sum_over += energy
+                    cfo_count_above +=1
+            else:
+                sum_under += energy
+                count_below += 1
+        sums_over_2.append(sum_over)
+        sums_under_2.append(sum_under)
+        count_over_2.append(count_above)
+        count_under_2.append(count_below)
+        cfo_sums_over_2.append(cfo_sum_over)
+        cfo_count_over_2.append(cfo_count_above)
+        #print ('T -- power:',np.around(np.log10(i_thresh),1),\
+        #    'sum over:',np.format_float_scientific(sum_over,precision=4),\
+        #    'sum under:',np.format_float_scientific(sum_under,precision=4),\
+        #    'count over:',count_above,'count under:',count_below)
+        over_thresh_2.append([magnitude(body[top_index]) for body in n_constit_2 if body[top_index+1] >= 2])
+        under_thresh_2.append([magnitude(body[top_index]) for body in n_constit_2 if body[top_index+1] < 2])
+        #print ('cutoff:',np.around(np.log10(i_thresh),2),'shape of over_thresh_2:',np.shape(np.asarray(over_thresh_2[-1])))
+    
+        n_constit_2 = np.delete(n_constit_2, -1, axis=1)
+    
+    #    if step == 0:
+    #        print ('        Singlet                            Triplet\n sum over       cfo sum over            sum over       cfo sum over')
+    #    print (np.format_float_scientific(sum_holder_1,precision=4),'   ',np.format_float_scientific(cfo_sum_holder_1)\
+    #        ,'          ',np.format_float_scientific(sum_over,precision=4),'   ',np.format_float_scientific(cfo_sum_over))
+    
+        n_over_gaps_per_scale.append(sums_over_2[step]-sums_over_1[step])
+        n_under_gaps_per_scale.append(sums_under_2[step]-sums_under_1[step])
+        n_raw_over_gaps.append((sums_over_2[step]-sums_over_1[step]))
+        cfo_over_gaps_per_scale.append(cfo_sums_over_2[step]-cfo_sums_over_1[step])
+        cfo_raw_over_gaps.append((cfo_sums_over_2[step]-cfo_sums_over_1[step]))
+        #print (n_over_gaps_per_scale)
+    
+        #print ('thresh:',np.around(np.log10(i_thresh),2))
+        #print (sums_over_2[step],'-',sums_over_1[step],'=',sums_over_2[step]-sums_over_1[step])
+        #print (sums_over_2[step]*2.1947e5,'-',sums_over_1[step]*2.1947e5,'=',(sums_over_2[step]-sums_over_1[step])*2.1947e5)
+    
+        #n_raw_gaps = np.copy(np.asarray(n_over_gaps_per_scale)*2.1947e5)
+        #n_raw_gaps = np.asarray(n_over_gaps_per_scale)*2.1947e5
+    
+        # Print bodies removed per cutoff scan, call attention to cutoffs with large jumps
+        body_count_1.append(0)
+        with open(('bodies_per_cutoff_n%s_1.txt' % n),'a') as f:
+            if step != 0:
+                f.write('=== removed bodies for %s with total energy %s cm-1 ===\n' % (np.around(np.log10(i_thresh),2),(sums_over_2[-1] - sums_over_1[-1])*2.1947e5))
+                body_count_1.append(0)
+                f.write('  change in energy since last cutoff: %s mHa\n' % np.around((n_over_gaps_per_scale[step] - n_over_gaps_per_scale[step-1]),4))
+                if abs(n_over_gaps_per_scale[step]-n_over_gaps_per_scale[step-1]) > 1e-4:
+                    f.write('   *** jump of more than 0.1 mHa found! ***\n') 
+                for body in range(len(trues_container_1[0])):
+                    #print ('body:',body,'true?',trues_container_1[-1][body])
+                    if trues_container_1[-1][body] <= 1:
+                        if trues_container_1[-2][body] >= 2:
+                            f.write('%s' % n_constit_1[body][0:n])
+                            body_count_1[step]+=1
+                            #print (n_constit_1[body][0:3])
+                if body_count_1[step] == 0:
+                    f.write('    no bodies removed this cutoff\n\n')
+                else:
+                    f.write('\n    count of removed bodies this cutoff: %s\n\n' % body_count_1[step])
+                    #for true in range(len(n_trues_1)):
+                    #    if trues_container[i] = 
+    
+        body_count_2.append(0)
+        with open(('bodies_per_cutoff_n%s_2.txt' % n),'a') as f:
+            if step != 0:
+                f.write('=== removed bodies for %s with total energy %s cm-1 ===\n' % (np.around(np.log10(i_thresh),2),(sums_over_2[-1] - sums_over_1[-1])*2.1947e5))
+                body_count_2.append(0)
+                f.write('  change in energy since last cutoff: %s mHa\n' % np.around((n_over_gaps_per_scale[step] - n_over_gaps_per_scale[step-1]),4))
+                if abs(n_over_gaps_per_scale[step]-n_over_gaps_per_scale[step-1]) > 1e-4:
+                    f.write('   *** jump of more than 0.1 mHa found! ***\n') 
+                for body in range(len(trues_container_2[0])):
+                    if trues_container_2[-1][body] <= 1:
+                        if trues_container_2[-2][body] >= 2:
+                            f.write('%s' % n_constit_2[body][0:n])
+                            body_count_2[step]+=1
+                if body_count_2[step] == 0:
+                    f.write('    no bodies removed this cutoff\n\n')
+                else:
+                    f.write('\n    count of removed bodies this cutoff: %s\n\n' % body_count_2[step])
+    
+        body_count_diff.append(body_count_2[step]-body_count_1[step])
+        body_count_diff_total.append(np.sum(body_count_diff))
+    
+        if sum(body_count_1) != sum(body_count_2):
+            #print ('found a mismatched body count at thresh',np.around(np.log10(i_thresh),2),'with',body_count_1[step],'for singlet',body_count_2[step],'for triplet')
+            n_over_gaps_per_scale[step] = n_over_gaps_per_scale[step-1]
+            cfo_over_gaps_per_scale[step] = cfo_over_gaps_per_scale[step-1]
+
+    #print ('n_constit_1[0]:',n_constit_1[0])
+    #print ('new_bodies_per_thresh:',new_bodies_per_thresh)
+    
+    # Print body count to see if bodies are dropped consistently between state.
+    #print('body_count_diff\n',body_count_diff)
+    #print('body_count_diff_total\n',body_count_diff_total)
+    
+    scaled_narrow = -np.array(np.log10(thresh_scan_narrow))
+    
+    #n_over_gaps_per_scale = np.array(sums_over_2) - np.array(sums_over_1)
+    #n_under_gaps_per_scale = np.array(sums_under_2) - np.array(sums_under_1)
+    print (('n = %s post-check:' % n))
+    print ('    ',sums_over_2[0],'-',sums_over_1[0],'=',n_over_gaps_per_scale[0])
+    print ('    ',sums_under_2[-1],'-',sums_under_1[-1],'=',n_under_gaps_per_scale[-1])
+    print ('  cfo:')
+    print ('    ',cfo_sums_over_2[0],'-',cfo_sums_over_1[0],'=',cfo_over_gaps_per_scale[0])
+    #print (cfo_sums_under_2[-1],'-',cfo_sums_under_1[-1],'=',cfo_under_gaps_per_scale[-1])
+    n_over_gaps_per_scale = np.asarray(n_over_gaps_per_scale)*2.1947e5
+    n_under_gaps_per_scale = np.asarray(n_under_gaps_per_scale)*2.1947e5
+    n_raw_over_gaps = np.asarray(n_raw_over_gaps)*2.1947e5
+    cfo_over_gaps_per_scale = np.asarray(cfo_over_gaps_per_scale)*2.1947e5
+    cfo_raw_over_gaps = np.asarray(cfo_raw_over_gaps)*2.1947e5
+    
+    n_gap_per_scale=[]
+    n_raw_gaps=[]
+    #print (n_wise_gaps[2]*2.1947e5)
+    for term in n_over_gaps_per_scale:
+        #print ('term:',term)
+        n_gap_per_scale.append(term+gaps_wn[n-2]+ref_gap)
+    for term in n_raw_over_gaps:
+        n_raw_gaps.append(term+gaps_wn[n-2]+ref_gap)
+    cfo_gap_per_scale=[]
+    cfo_raw_gaps=[]
+    for term in cfo_over_gaps_per_scale:
+        cfo_gap_per_scale.append(term+gaps_wn[n-2]+ref_gap)
+    for term in cfo_raw_over_gaps:
+        cfo_raw_gaps.append(term+gaps_wn[n-2]+ref_gap)
+
+    #plot_thresh_vals = [np.power(10,-4.2),np.power(10,-4.0),np.power(10,-3.8)]
+    #for i,power in enumerate(plot_thresh_vals):
+    #    for step,i_thresh in enumerate(thresh_scan_narrow):
+    #        if i_thresh == power:
+    #            print ('printing over/under values for',np.around(np.log10(i_thresh),2),'to file')
+    #            np.savetxt(('data/%s_over_thresh_1.csv' % -np.around(np.log10(i_thresh),2)),over_thresh_1[step],delimiter=',')
+    #            np.savetxt(('data/%s_under_thresh_1.csv' % -np.around(np.log10(i_thresh),2)),under_thresh_1[step],delimiter=',')
+    #            np.savetxt(('data/%s_over_thresh_2.csv' % -np.around(np.log10(i_thresh),2)),over_thresh_2[step],delimiter=',')
+    #            np.savetxt(('data/%s_under_thresh_2.csv' % -np.around(np.log10(i_thresh),2)),under_thresh_2[step],delimiter=',')
+    
+    with open(('gap_scan_n%s.txt' % n),'w') as f:
+        f.write('--Gaps Per Power (cm-1)--\n')
+        f.write('power     gap        # over / # under (1)    # over / # under (2)\n')
+        for i,i_thresh in enumerate(thresh_scan_narrow):
+            f.write('%s  %s  %s  %s  %s  %s\n' % \
+                (np.around(np.log10(i_thresh),2),n_gap_per_scale[i], \
+                count_over_1[i],count_under_1[i],count_over_2[i],count_under_2[i]))
+            #f.write('power:',np.around(np.log10(i_thresh),2),'gap:',n_gap_per_scale[i], \
+            #    'count over:',count_over_1[i],'count under:',count_under_1[i])
+    with open(('gap_scan_raw_n%s.txt' % n),'w') as f:
+        f.write('--Gaps Per Power (cm-1)--\n')
+        f.write('power     gap        # over / # under\n')
+        for i,i_thresh in enumerate(thresh_scan_narrow):
+            f.write('%s  %s  %s  %s  %s  %s\n' % \
+                (np.around(np.log10(i_thresh),2),n_raw_gaps[i], \
+                count_over_1[i],count_under_1[i],count_over_2[i],count_under_2[i]))
+    
+    with open(('cfo_gap_scan_n%s.txt' % n),'w') as f:
+        f.write('--Gaps Per Power (cm-1)--\n')
+        f.write('power     gap        # over \n')
+        for i,i_thresh in enumerate(thresh_scan_narrow):
+            f.write('%s  %s  %s\n' % (np.around(np.log10(i_thresh),2),cfo_gap_per_scale[i],cfo_count_over_1[i]))
+    
+    with open(('exact_scan_n%s.txt' % n),'w') as f:
+        f.write('--Exact 3-body Energies Per Power (cm-1)--\n')
+        f.write('power     S energy      T energy\n')
+        for i,i_thresh in enumerate(thresh_scan_narrow):
+            f.write('%s    %s    %s\n' % (np.around(np.log10(i_thresh),2),sums_over_1[i],sums_over_2[i]))
+    
+    with open(('cfo_exact_scan_n%s.txt' % n),'w') as f:
+        f.write('--Exact 3-body Energies Per Power (cm-1)--\n')
+        f.write('power     S energy      T energy\n')
+        for i,i_thresh in enumerate(thresh_scan_narrow):
+            f.write('%s    %s    %s\n' % (np.around(np.log10(i_thresh),2),cfo_sums_over_1[i],cfo_sums_over_2[i]))
+
+    #exact_12_1=e_ref_1+sum(e_energies_1[0])+sum(e_energies_1[1])
+    #exact_12_2=e_ref_1+sum(e_energies_2[0])+sum(e_energies_2[1])
+    #print ('exact_12_1:',exact_12_1)
+    #print ('exact_12_2:',exact_12_2)
+    #with open(('total_scan_n%s.txt' % n),'w') as f:
+    #    f.write('              Singlet        Triplet \n')
+    #    f.write('Reference E: %s  %s \n' % (e_ref_1,e_ref_2))
+    #    f.write('Total n=1 E: %s  %s \n' % (sum(e_energies_1[0]),sum(e_energies_2[0])))
+    #    f.write('Total n=2 E: %s  %s \n' % (sum(e_energies_1[1]),sum(e_energies_2[1])))
+    #    f.write('Total n=3 E: %s  %s \n' % (sum(e_energies_1[2]),sum(e_energies_2[2])))
+    #    if n > 3:
+    #        f.write('Total n=4 E: %s  %s \n' % (sum(e_energies_1[3]),sum(e_energies_2[3])))
+    #    f.write('Total sum E: %s  %s \n' % (e_ref_1+sum(sum(x) for x in e_energies_1),e_ref_2+sum(sum(x) for x in e_energies_2)))
+    #    f.write(('--Total %s-body Energies Per Power (cm-1)--\n' % n))
+    #    f.write('power     S energy      T energy\n')
+    #    for i,i_thresh in enumerate(thresh_scan_narrow):
+    #        f.write('%s    %s    %s\n' % (np.around(np.log10(i_thresh),2),sums_over_1[i]+exact_12_1,sums_over_2[i]+exact_12_2))
+
+    #np.save(os.getcwd()+('/data/n%s_over_gaps_per_scale.npy' % n),n_over_gaps_per_scale,allow_pickle=False)
+    #np.save(os.getcwd()+'/data/n3_gap_per_scale.npy',n3_gap_per_scale,allow_pickle=False)
+    #np.save(os.getcwd()+'/data/thresh_scan_narrow.npy',thresh_scan_narrow,allow_pickle=False)
+    #np.save(os.getcwd()+'/data/scaled_narrow.npy',scaled_narrow,allow_pickle=False)
+    #np.save(os.getcwd()+'/data/sums_over_1.npy',sums_over_1,allow_pickle=False)
+    #np.save(os.getcwd()+'/data/sums_over_2.npy',sums_over_2,allow_pickle=False)
+    #np.save(os.getcwd()+'/data/count_over_1.npy',count_over_1,allow_pickle=False)
+    np.savetxt(('data/n%s_over_gaps_per_scale.csv' % n),n_over_gaps_per_scale,delimiter=',')
+    np.savetxt(('data/n%s_gap_per_scale.csv' % n),n_gap_per_scale,delimiter=',')
+    np.savetxt('data/thresh_scan_narrow.csv',thresh_scan_narrow,delimiter=',')
+    np.savetxt('data/scaled_narrow.csv',scaled_narrow,delimiter=',')
+    np.savetxt(('data/sums_over_n%s_1.csv' % n),sums_over_1,delimiter=',')
+    np.savetxt(('data/sums_over_n%s_2.csv' % n),sums_over_2,delimiter=',')
+    np.savetxt(('data/count_over_n%s_1.csv' % n),count_over_1,delimiter=',')
+    np.savetxt(('data/n%s_raw_gaps.csv' % n),n_raw_gaps,delimiter=',')
+    np.savetxt(('data/body_count_diff_total_n%s.csv' % n),body_count_diff_total,delimiter=',')
+    np.savetxt(('data/cfo_gap_per_scale_n%s.csv' % n),cfo_gap_per_scale,delimiter=',')
+
+diffloop(3,n3_constit_1,n3_constit_2)
+if n > 3:
+    diffloop(n,n4_constit_1,n4_constit_2)
+

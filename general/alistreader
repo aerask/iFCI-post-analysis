@@ -1,0 +1,67 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+
+n=0
+natoms=0
+ncore=0
+nact=0
+nocc=0
+
+in_name = sys.argv[1]
+if in_name.endswith('.out'):
+    in_name = in_name[:-4]
+
+with open(sys.argv[1]) as output_file:
+    for i,line in enumerate(output_file):
+        if ('alist:') in line:
+            alist_line = i
+        if ('natoms:') in line:
+            atoms_split = line.split()
+            natoms = int(atoms_split[1])
+        if ('core:') in line:
+            core_split = line.split()
+            ncore = int(core_split[5])
+            nact = int(core_split[8])
+            nocc = ncore + nact
+
+print ('atoms:',natoms,'core:',ncore,'active:',nact,'occupied:',nocc)
+
+alist_core = np.zeros((ncore,natoms))
+alist_act = np.zeros((nact,natoms))
+
+with open(sys.argv[1]) as output_file:
+    for i,line in enumerate(output_file):
+        if alist_line < i <= (alist_line+ncore):
+            core_split = line.split()
+            orb = int((core_split[0])[:-1])
+            #print ('core:',orb)
+            for j in range(natoms):
+                #print ('i:',i,'j:',j,'orb:',orb,'core_split[j+1]:',core_split[j+1])
+                alist_core[orb-1][j]=int(core_split[j+1])
+        elif (alist_line+ncore+2) <= i <= (alist_line+nocc+1):
+            act_split = line.split()
+            orb = int((act_split[0])[:-1])
+            #print ('active:',orb)
+            for j in range(natoms):
+                alist_act[orb-ncore-1][j]=int(act_split[j+1])
+
+#print('core:')
+#for i in alist_core:
+#    print (i)
+#
+#print('active:')
+#for i in alist_act:
+#    print (i)
+
+#print (alist_core)
+#print (alist_act)
+
+np.savetxt(('alist_core_%s.csv' % in_name),alist_core,delimiter=',')
+np.savetxt(('alist_act_%s.csv' % in_name),alist_act,delimiter=',')
+np.save(os.getcwd()+('/alist_core_%s.npy' % in_name),alist_core,allow_pickle=False)
+np.save(os.getcwd()+('/alist_act_%s.npy' % in_name),alist_act,allow_pickle=False)
+
+
+

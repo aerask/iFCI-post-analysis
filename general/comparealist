@@ -1,0 +1,33 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+
+alist_1 = np.load(sys.argv[1])
+alist_2 = np.load(sys.argv[2])
+print ('orbs:',len(alist_1))
+print ('atoms:',len(alist_1[0]))
+alist_order = np.zeros((len(alist_1),len(alist_1[0])+1))
+
+for i in reversed(range(len(alist_1))):
+    for j in reversed(range(len(alist_2))):
+        compare = alist_1[i] == alist_2[j]
+        if compare.all() and i not in alist_order:
+            alist_order[i][-1] = j
+            print ('i:',i,'j:',j)
+            #print ('match:',alist_1[i])
+        #else:
+        #    print ('mismatch:',alist_1[i])
+
+print ('alist_order')
+for i in alist_order:
+    print (i)
+
+
+
+comparison = alist_1 == alist_2
+equal_arrays = comparison.all()
+
+print(equal_arrays)
+
+np.savetxt('alist_order.csv',alist_order,delimiter=',')

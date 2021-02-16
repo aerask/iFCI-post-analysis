@@ -1,0 +1,198 @@
+#!/usr/local/bin/python3
+import sys
+import os
+import numpy as np
+import copy
+#import scipy
+from collections import Counter
+from matplotlib import pyplot as plt
+#from scipy.interpolate import make_interp_spline
+
+n3_over_gaps_per_scale = np.load(os.getcwd()+'/data/n3_over_gaps_per_scale.npy',allow_pickle=False)
+n3_gap_per_scale = np.load(os.getcwd()+'/data/n3_gap_per_scale.npy',allow_pickle=False)
+thresh_scan_narrow = np.load(os.getcwd()+'/data/thresh_scan_narrow.npy',allow_pickle=False)
+scaled_narrow = np.load(os.getcwd()+'/data/scaled_narrow.npy',allow_pickle=False)
+sums_over_S = np.load(os.getcwd()+'/data/sums_over_S.npy',allow_pickle=False)
+count_over_S = np.load(os.getcwd()+'/data/count_over_S.npy',allow_pickle=False)
+
+print ('scaled_narrow:\n',scaled_narrow)
+
+#print ('--Gaps Per Power (cm-1)--')
+#print ('power     gap        # over / # under')
+#for i,i_thresh in enumerate(thresh_scan_narrow):
+#    print (np.around(np.log10(i_thresh),2),n3_gap_per_scale[i],count_over_S[i],count_under_S[i])
+    #print ('power:',np.around(np.log10(i_thresh),2),'gap:',n3_gap_per_scale[i], \
+    #    'count over:',count_over_S[i],'count under:',count_under_S[i])
+
+#print ('n3_gap_per_scale:',n3_gap_per_scale)
+#for inc in range(1,n+1):
+#    total_gap+=gaps_wn[inc-1]-ref_gap
+#print ('total gap =',total_gap+ref_gap)
+#print ('top gap =',n3_over_gaps_per_scale[0]+gaps_wn[1]+gaps_wn[0])
+#print ('with ref gap =',n3_over_gaps_per_scale[0]+ref_gap)
+
+window = 0.0002 * 2.1947e5
+print ('green window:',window,'cm-1')
+expt_gap_wn = 130 # Zn actual experimental gap in cm-1
+#expt_gap_wn = 214 # V actual experimental gap in cm-1
+expt_gap_kc = expt_gap_wn*2.8591e-3 # convert to cm-1 to kcal/mol
+expt_gap_ha = expt_gap_kc*1.5936e-3 # convert kcal/mol to Ha
+
+with open('gap_scan.txt','a') as f:
+    f.write('\nexpt gap for reference:\n%s cm-1 \n%s kcal/mol \n%s Ha' % (expt_gap_wn,np.around(expt_gap_kc,4),np.around(expt_gap_ha,6)))
+
+axhline_include = []
+for i,term in enumerate(n3_over_gaps_per_scale):
+    #print ('checking term:',term,'against:',n3_over_gaps_per_scale[0])
+    if abs(n3_over_gaps_per_scale[0])-window <= abs(term) <= abs(n3_over_gaps_per_scale[0])+window:
+        #axhline_len += 1/len(n3_over_gaps_per_scale)
+        axhline_include.append(scaled_narrow[i])
+    else:
+        break
+print ('axhline_include from',np.around(axhline_include[-1],2),'to',np.around(axhline_include[0],2))
+green_top = n3_over_gaps_per_scale[0]+window
+green_top_gap = n3_gap_per_scale[0]+window
+if (n3_over_gaps_per_scale[0]-window < 0):
+    green_bottom = 0
+else:
+    green_bottom = n3_over_gaps_per_scale[0]-window
+#if (n3_gap_per_scale[0]-window < n3_gap_per_scale[-1]):
+#    green_bottom_gap = n3_gap_per_scale[-1]
+#else:
+#    green_bottom_gap = n3_gap_per_scale[0]-window
+green_bottom_gap = n3_gap_per_scale[0]-window
+
+# 3s means sum, 3c means count, 3b means both
+plt3s, pax3s = plt.subplots()
+plt3s_title = ('plot_n3s_diff')
+plt3s_label = ('T-S Sum for n=3 Terms from n=2 Terms Above Scanning Threshold')
+#plt3s_label = ('n=2->3 check for T-S Sum, total gap='+str(np.around(gaps[2],decimals=2))+'cm-1')
+pax3s.fill_between(axhline_include,green_top,green_bottom,color='#53e669')
+#pax3s.axhline(y=sums_over[0],color='r',linewidth=20,xmin=0.7,xmax=1)
+#pax3s.plot(scaled_narrow,n3_over_gaps_per_scale,label='over thresh diff, full gap='+str(np.around(gaps[2],decimals=2))+'cm-1',color='#2683c6',linewidth=3)
+pax3s.plot(scaled_narrow,n3_over_gaps_per_scale,label='over thresh diff',color='#2683c6',linewidth=3)
+#pax3s.plot(scaled_narrow,n3_under_gaps_per_scale,label='under',color='#ffd600',linewidth=3)
+pax3s.set_title(plt3s_label)
+pax3s.set_xlabel('-log10(n=2 check)',fontsize=12)
+#pax3s.set_ylabel('T-S sum of n=3 energies (Ha)',fontsize=12)
+pax3s.set_ylabel('T-S sum of n=3 energies (cm-1)',fontsize=12)
+pax3s.legend(fontsize=12)
+#plt3s.subplots_adjust(left=0.15)
+plt3s.savefig(plt3s_title+'.png')
+
+# tg for total gap in cm-1
+plt3tg, pax3tg = plt.subplots()
+plt3tg_title = ('plot_n3tg_diff')
+plt3tg_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+#pax3tg.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+pax3tg.axhline(y=expt_gap_wn,color='r',linewidth=3)
+pax3tg.plot(scaled_narrow,n3_gap_per_scale,label='gap per thresh',color='#2683c6',linewidth=3)
+pax3tg.set_title(plt3tg_label)
+pax3tg.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3tg.set_ylabel('Total T-S n=3 Gap (cm-1)',fontsize=12)
+pax3tg.set_ylim(top=200,bottom=0)
+#pax3tg.legend(fontsize=12)
+plt3tg.savefig(plt3tg_title+'.png')
+
+
+## smooth interpolated B-Spline (is) version of tg
+#snis = np.linspace(1.5,5.5,81) # scaled_narrow interpolated spline
+#print ('snis:',snis)
+#a_BSpline = interpolate.make_interp_spline(scaled_narrow,n3_gap_per_scale)
+#ngis = a_BSpline(snis) # n3_gap_per_scale interpolated spline
+#
+#plt3is, pax3is = plt.subplots()
+#plt3is_title = ('plot_n3is_diff_'+sys.argv[1])[:-4]
+#plt3is_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+##pax3is.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+#pax3is.axhline(y=expt_gap_wn,color='r',linewidth=3)
+#pax3is.plot(snis,ngis,label='gap per thresh',color='#2683c6',linewidth=3)
+#pax3is.set_title(plt3is_label)
+#pax3is.set_xlabel('-log10(n=2 check)',fontsize=12)
+#pax3is.set_ylabel('Total T-S n=3 Gap (cm-1)',fontsize=12)
+##pax3is.legend(fontsize=12)
+#plt3is.savefig(plt3is_title+'.png')
+
+
+## bar graph with discontinuous discretization
+#dis_gaps = [] # dis for discontinuous
+#for i in range(len(n3_gap_per_scale)):
+#    if (i+1) % 5 == 0:
+#        dis_gaps.append(sum(np.asarray(n3_gap_per_scale[i:i+5]))/5)
+#
+#print ('dis_gaps:\n',dis_gaps)
+#
+#bar3, bax3 = plt.subplots()
+##bax3 = fig.add_axes([0,0,1,1])
+#bar3_title = ('bar_n3_diff_'+sys.argv[1])[:-4]
+#x_range = np.linspace(1,9,17) # 33 for 0.25
+##langs = ['C', 'C++', 'Java', 'Python', 'PHP']
+##students = [23,17,35,29,12]
+#bax3.bar(x_range,dis_gaps)
+#bar3.savefig(bar3_title+'.png')
+
+
+# kc for kcal/mol
+green_top_gap*=2.8591e-3
+green_bottom_gap*=2.8591e-3
+n3_gap_per_scale = np.asarray(n3_gap_per_scale)*2.8591e-3
+print ('expt gap:',expt_gap_kc,'n=3 gap:',n3_gap_per_scale[0],'in kcal/mol')
+#print ('--Gaps Per Power (kcal/mol)--')
+#print ('power     gap        # over / # under')
+#for i,i_thresh in enumerate(thresh_scan_narrow):
+#    print (np.around(np.log10(i_thresh),2),n3_gap_per_scale[i],count_over_S[i],count_under_S[i])
+
+plt3kc, pax3kc = plt.subplots()
+plt3kc_title = ('plot_n3kc_diff')
+plt3kc_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+#pax3kc.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+pax3kc.axhline(y=expt_gap_kc,color='r',linewidth=3)
+pax3kc.plot(scaled_narrow,n3_gap_per_scale,label='gap per thresh',color='#2683c6',linewidth=3)
+pax3kc.set_title(plt3kc_label)
+pax3kc.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3kc.set_ylabel('Total T-S n=3 Gap (kcal/mol)',fontsize=12)
+pax3kc.set_ylim(top=0.8,bottom=0.0)
+#pax3kc.legend(fontsize=12)
+plt3kc.savefig(plt3kc_title+'.png')
+
+## ec for error cutoff
+#err_per_body=1e-5
+#err_from_terms=[]
+#err_per_cutoff=[]
+#for i in range(len(count_over_S)):
+#    err_from_terms.append(err_per_body*count_over_S[i])
+#    err_per_cutoff.append(err_from_terms[i]/thresh_scan_narrow[i])
+#    #print ('cutoff',np.log10(thresh_scan_narrow[i]),'has total error of:',err_from_terms[i],'and val on x-axis of',err_per_cutoff[i])
+#
+#plt3ec, pax3ec = plt.subplots()
+#plt3ec_title = ('plot_n3ec_diff_'+sys.argv[1])[:-4]
+#plt3ec_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+##pax3ec.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+#pax3ec.axhline(y=expt_gap_kc,color='r',linewidth=3)
+#pax3ec.plot(err_per_cutoff,n3_gap_per_scale,label='gap per thresh',color='#2683c6',linewidth=3)
+#pax3ec.set_title(plt3ec_label)
+#pax3ec.set_xlabel('(error per body * # of terms at cutoff) / cutoff',fontsize=12)
+#pax3ec.set_ylabel('Total T-S n=3 Gap (kcal/mol)',fontsize=12)
+##pax3ec.legend(fontsize=12)
+#plt3ec.savefig(plt3ec_title+'.png')
+
+# vc for versus cutoff
+n3_gap_per_scale = np.asarray(n3_gap_per_scale)*1.5936e-3 # convert kcal/mol to Ha
+gap_diff = n3_gap_per_scale - n3_gap_per_scale[0]
+diff_per_cutoff=[]
+for i in range(len(n3_gap_per_scale)):
+    diff_per_cutoff.append(gap_diff[i]/thresh_scan_narrow[i])
+    #print ('n3_gap_per_scale:',n3_gap_per_scale[i],'scale',np.around(-np.log10(thresh_scan_narrow[i]),2),'gap_diff:',gap_diff[i],'diff_per_cutoff:',diff_per_cutoff[i])
+
+plt3vc, pax3vc = plt.subplots()
+plt3vc_title = ('plot_n3vc_diff')
+plt3vc_label = ('Difference in T-S Gap from Total 3-body per 3-body Cutoff')
+#pax3vc.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+#pax3vc.axhline(y=expt_gap_ha,color='r',linewidth=3)
+pax3vc.plot(scaled_narrow,diff_per_cutoff,label='gap per thresh',color='#2683c6',linewidth=3)
+pax3vc.set_title(plt3vc_label)
+pax3vc.set_xlabel('-log10(cutoff)',fontsize=12)
+pax3vc.set_ylabel('T-S Gap - Total n=3 Gap / cutoff',fontsize=12)
+#pax3vc.legend(fontsize=12)
+plt3vc.savefig(plt3vc_title+'.png')
+

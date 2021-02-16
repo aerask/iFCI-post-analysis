@@ -1,0 +1,270 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+
+in_name_1 = sys.argv[1]
+if in_name_1.endswith('.out'):
+    in_name_1 = in_name_1[:-4]
+in_name_2 = sys.argv[2]
+if in_name_2.endswith('.out'):
+    in_name_2 = in_name_2[:-4]
+print ('input file:',in_name_1,'and',in_name_2)
+
+select_nodes_1 = np.load((os.getcwd()+'/nodes_select_%s.npy' % in_name_1),allow_pickle=False)
+select_nodes_2 = np.load((os.getcwd()+'/nodes_select_%s.npy' % in_name_2),allow_pickle=False)
+select_edges_1 = np.load((os.getcwd()+'/edges_select_%s.npy' % in_name_1),allow_pickle=False)
+select_edges_2 = np.load((os.getcwd()+'/edges_select_%s.npy' % in_name_2),allow_pickle=False)
+
+a5g_order = np.array([1, 2, 4, 3, 25, 20, 9, 23, 12, 11, 10, 19, 18, 24, 21, 22, 5, 8, 7, 6, 13, 14, 15, 17, 16, 33, 30, 28, 27, 29, 31, 26, 32, 36, 37, 34, 35, 41, 38, 42, 39, 44, 40, 45, 43])
+a2g_order = np.array([1, 2, 3, 18, 19, 9, 4, 20, 10, 11, 12, 21, 22, 23, 24, 25, 5, 6, 7, 8, 13, 14, 15, 16, 17, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45])
+e3g_order = np.array([1, 2, 3, 4, 18, 24, 10, 25, 9, 12, 11, 22, 23, 19, 21, 20, 8, 7, 6, 5, 13, 16, 17, 15, 14, 26, 30, 31, 28, 27, 29, 33, 32, 37, 34, 35, 36, 41, 43, 40, 38, 39, 45, 42, 44]) # Note: switched 1 and 3
+
+homo_tuple_1 = 69
+homo_tuple_2 = 69
+#homo_tuple_1=np.max(select_nodes_1[:,5])
+print ('homotuple for state 1:',int(homo_tuple_1))
+#homo_tuple_2=np.max(select_nodes_2[:,5])
+print ('homotuple for state 2:',int(homo_tuple_2))
+
+print ('shape of nodes 1:',np.shape(select_nodes_1))
+#print ('shape of nodes 2:',np.shape(select_nodes_2))
+print ('shape of edges 1:',np.shape(select_edges_1))
+#print ('shape of edges 2:',np.shape(select_edges_2))
+
+n = max(select_nodes_1[:,2])
+print ('n-level is',int(n))
+
+def scaler(energy):
+    scaled = -1/np.log10(np.absolute(energy))
+    return (scaled)
+
+# Calculate node radial positions
+def calc_angle(bodies,index):
+    angle = index*2*np.pi/bodies+np.pi/bodies
+    return (angle)
+
+# Calculate node cartesian positions
+def calc_pos(r,angle):
+    x_pos = r*np.cos(angle)
+    y_pos = r*np.sin(angle)
+    return(x_pos,y_pos)
+
+# Assign indices to nodes according to orbital order
+def idx_link(order,nodes,homo):
+    indexed_ary = np.zeros((len(nodes),int(n)))
+    for i,node in enumerate(nodes):
+        for inc in range(int(n)):
+            for j,index in enumerate(order):
+                if node[inc+5] == (homo-j+1):
+                    indexed_ary[i,inc] = index
+                    #print ('node:',node[inc+5],'homo-j+1:',homo-j+1,'index:',index,'ary:',indexed_ary[i,inc])
+    #print (indexed_ary)
+    return (indexed_ary)
+
+def energy_diff(nodes_a,nodes_b):
+    nodes_diff = []
+    count = 0
+    #n_body_counts = np.transpose(nodes_a)[:][2]
+    #nodes_per_body = []
+    #for inc in range(int(n)):
+    #    nodes_per_body.append((inc+1 == n_body_counts).sum())
+    #print ('nodes per body:',nodes_per_body)
+    for a in nodes_a:
+        for b in nodes_b:
+            if all(np.sort(a[15:19]) == np.sort(b[15:19])):
+                #print (a[15:19],b[15:19])
+                nodes_diff.append([])
+                diff_energy = a[3] - b[3]
+                #print (diff_energy,scaler(diff_energy))
+                diff_scaled = a[4] - b[4]
+                nodes_diff[count].append(float(count)) # node id
+                nodes_diff[count].append(a[1])  # original node id for state 1
+                nodes_diff[count].append(b[1])  # original node id for state 2
+                nodes_diff[count].append(a[2])  # n-level
+                nodes_diff[count].append(a[9])  # n-index
+                nodes_diff[count].append(a[15]) # index1
+                nodes_diff[count].append(a[16]) # index2
+                nodes_diff[count].append(a[17]) # index3
+                nodes_diff[count].append(a[18]) # index4
+                nodes_diff[count].append(a[3])  # energy for state 1
+                nodes_diff[count].append(a[4])  # scaled for state 1
+                nodes_diff[count].append(b[3])  # energy for state 2
+                nodes_diff[count].append(b[4])  # scaled for state 2
+                nodes_diff[count].append(diff_energy)           # state 1 - state 2 energy
+                nodes_diff[count].append(abs(diff_energy))      # absolute of state 1 - state 2 energy
+                nodes_diff[count].append(diff_scaled)           # scaled state 1 - scaled state 2
+                nodes_diff[count].append(scaler(diff_energy))   # scaled (state 1 - state 2)
+
+                #bodies_in_inc = nodes_per_body[int(a[2])-1]
+                #node_angle = calc_angle(bodies_in_inc,nodes_diff[count][4])
+                ##print ('n:',a[2],'count',count,'bodies in inc:',bodies_in_inc,'angle:',np.degrees(node_angle))
+                #x_val,y_val = calc_pos(a[2],node_angle) # n-body (radius) and angle
+                #nodes_diff[count].append(x_val)
+                #nodes_diff[count].append(y_val)
+                count += 1
+    return (nodes_diff)
+
+def resort_diff_nodes(nodes_diff):
+    check_ary = []
+    for i,node in enumerate(nodes_diff):
+        current_idx = np.asarray(node[5:9]).astype(int)
+        d_check = -(np.sum(np.ma.masked_where(current_idx < 5, node[5:9]).mask) - (4 - node[3]))
+        sig_check = -(np.sum(np.ma.masked_where(current_idx > 4, node[5:9]).mask))
+        check_ary.append([])
+        check_ary[i].append(d_check)
+        check_ary[i].append(sig_check)
+        #print ('node:',node[5:9],'d_check:',d_check,'sig_check',sig_check)
+    nodes_diff = np.hstack((nodes_diff,check_ary))
+    sort_index = np.lexsort((nodes_diff[:,8],nodes_diff[:,7],nodes_diff[:,6],nodes_diff[:,5],\
+                         nodes_diff[:,18],nodes_diff[:,17],nodes_diff[:,3]))
+    sorted_nodes_diff = nodes_diff[sort_index]
+
+    n_body_counts = np.transpose(nodes_diff)[:][3]
+    nodes_per_body = []
+    for inc in range(int(n)):
+        nodes_per_body.append((inc+1 == n_body_counts).sum())
+    print ('nodes per body:',nodes_per_body)
+
+    count = 0
+    coordinates = []
+    for i,node in enumerate(nodes_diff):
+        bodies_in_inc = nodes_per_body[int(node[3])-1]
+        node_angle = calc_angle(bodies_in_inc,nodes_diff[count][4])
+        #print ('n:',node[3],'count',count,'bodies in inc:',bodies_in_inc,'angle:',np.degrees(node_angle))
+        x_val,y_val = calc_pos(node[3],node_angle) # n-body (radius) and angle
+        coordinates.append([])
+        coordinates[i].append(x_val)
+        coordinates[i].append(y_val)
+        count += 1
+
+    sorted_nodes_diff = np.hstack((sorted_nodes_diff,coordinates))
+    return (sorted_nodes_diff)
+
+def make_diff_edges(nodes_diff,edges_a,edges_b):
+    edges_diff = []
+    
+    n_body_counts = np.transpose(nodes_diff)[:][3]
+    nodes_per_body = []
+    for inc in range(int(n)):
+        nodes_per_body.append((inc+1 == n_body_counts).sum())
+    #print ('nodes per body:',nodes_per_body)
+
+    edges = 0
+    for node in nodes_diff:
+        current_n = node[3]
+        if current_n > 1:
+            for prev_n_node in nodes_diff:
+                node_check = node[5:9]
+                node_check.append(0)
+                contained = all(elem in node_check for elem in prev_n_node[5:9])
+                if prev_n_node[3] == (node[3]-1) and contained:
+                    #print (prev_n_node[5:9],node_check,contained)
+                    edges_diff.append([])
+                    edges_diff[edges].append(edges)
+                    edges_diff[edges].append(node[0])
+                    edges_diff[edges].append(prev_n_node[0])
+                    edges_diff[edges].append(node[3])
+                    edges_diff[edges].append(node[12])  # insert state 2 scaled
+                    #edges_diff[edges].append(node[13])  # insert diff
+                    #edges_diff[edges].append(node[14])  # insert abs diff
+                    #edges_diff[edges].append(node[16])  # insert scaled
+                    edges += 1
+
+    #for edge in edges_diff:
+    #    print (edge)
+    return (edges_diff)
+
+# Generate index arrays
+indexed_1 = idx_link(e3g_order,select_nodes_1,homo_tuple_1)
+indexed_2 = idx_link(a2g_order,select_nodes_2,homo_tuple_2)
+print ('shape of indexed 1:',np.shape(indexed_1))
+
+# Stack index arrays with nodes
+nodes_indexed_1 = np.hstack((select_nodes_1,indexed_1))
+nodes_indexed_2 = np.hstack((select_nodes_2,indexed_2))
+print ('shape of nodes indexed 1:',np.shape(nodes_indexed_1))
+#print ('shape of nodes indexed 2:',np.shape(nodes_indexed_2))
+
+# Calculate the spin gap per node/body
+diff_nodes = energy_diff(nodes_indexed_1,nodes_indexed_2)
+diff_edges = make_diff_edges(diff_nodes,select_edges_1,select_edges_2)
+#print (diff_nodes)
+
+# Resort nodes according to linked index
+diff_nodes = resort_diff_nodes(diff_nodes)
+
+
+#for node_1 in nodes_indexed_1:
+#    for node_2 in nodes_indexed_2:
+#        if node_1[]
+
+
+#diff_ary = nodes_indexed_2[:,4] - nodes_indexed_1[:,4]
+#print (diff_ary)
+#exit()
+#nodes_indexed_diff = nodes_indexed_1
+
+# Print functions
+def node_file_print(in_name,nodes_indexed):
+    header_node = ['id','node','n-level','energy','scaled','body1','body2','body3','body4','n-index','angle','x','y','d_count','sig_count','index1','index2','index3','index4']
+    node_file = open(('nodes_indexed_%s.csv' % in_name),'w')
+    for i in range(len(header_node)):
+        node_file.write(header_node[i])
+        if i != len(header_node) - 1:
+            node_file.write(',')
+    node_file.write('\n')
+    for node in nodes_indexed:
+        for col in node:
+            node_file.write(str(col))
+            node_file.write(',')
+        node_file.write('\n')
+
+def diff_nodes_print(diff_nodes_ary,n_print):
+    header_node = ['id',('node_%s' % in_name_1),('node_%s' % in_name_2),'n-level','n-index','index1','index2','index3','index4', \
+      ('energy_%s' % in_name_1),('scaled_%s' % in_name_1),('energy_%s' % in_name_2),('scaled_%s' % in_name_2), \
+      'e_diff','abs_e_diff','s_diff','s_diff_true','d_count','sig_count','x','y']
+    node_file = open(('nodes_diff_%s-%s_n%s.csv' % (in_name_1,in_name_2,n_print)),'w')
+    for i in range(len(header_node)):
+        node_file.write(header_node[i])
+        if i != len(header_node) - 1:
+            node_file.write(',')
+    node_file.write('\n')
+    for node in diff_nodes_ary:
+        if node[3] <= n_print:
+            for i,col in enumerate(node):
+                node_file.write(str(col))
+                if i != len(node) - 1:
+                    node_file.write(',')
+            node_file.write('\n')
+
+def diff_edges_print(diff_edges_ary,n_print):
+    header_edge = ['id','Source','Target','n-level','Weight','Type']
+    edge_file = open(('edges_diff_%s-%s_n%s.csv' % (in_name_1,in_name_2,n_print)),'w')
+    for i in range(len(header_edge)):
+        edge_file.write(header_edge[i])
+        if i != len(header_edge) - 1:
+            edge_file.write(',')
+    edge_file.write('\n')
+    for edge in diff_edges_ary:
+        if edge[3] <= n_print:
+            for i,col in enumerate(edge):
+                edge_file.write(str(col))
+                if i != len(edge) -1:
+                    edge_file.write(',')
+            edge_file.write(',Undirected')
+            edge_file.write('\n')
+
+# Print each node/edge file
+node_file_print(in_name_1,nodes_indexed_1)
+node_file_print(in_name_2,nodes_indexed_2)
+diff_nodes_print(diff_nodes,4)
+diff_edges_print(diff_edges,4)
+diff_nodes_print(diff_nodes,3)
+diff_edges_print(diff_edges,3)
+diff_nodes_print(diff_nodes,2)
+diff_edges_print(diff_edges,2)
+
+
+
+#print (indexed)
