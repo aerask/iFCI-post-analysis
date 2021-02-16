@@ -1,0 +1,545 @@
+#!/usr/local/bin/python3
+import sys
+import os
+import numpy as np
+import copy
+#import scipy
+from collections import Counter
+from matplotlib import pyplot as plt
+#from scipy.interpolate import make_interp_spline
+
+"""
+Code written Mar 2020.
+Scans iFCI singlet+triplet output and generates difference plot according to 
+scanning screening variable.
+Input ./state_diff.py ifci_singlet.out ifci_triplet.out
+"""
+
+n=0
+e_start_S=[]
+e_start_T=[]
+e_end_S=[]
+e_end_T=[]
+e_energies_S=[]
+e_energies_T=[]
+n3_elements_S=[]
+n3_elements_T=[]
+constit_start_S=[]
+constit_start_T=[]
+constit_end_S=[]
+constit_end_T=[]
+constit_count_S=[]
+constit_count_T=[]
+n3_constit_S=[]
+n3_constit_T=[]
+n4_constit_S=[]
+n4_constit_T=[]
+n_wise_terms_S=[]
+n_wise_terms_T=[]
+n_wise_energies_S=[]
+n_wise_energies_T=[]
+n_wise_totals_S=[]
+n_wise_totals_T=[]
+e_ref_S=0
+e_ref_T=0
+next_line=False
+
+# Read files, set line flags, and search for energies
+#print ('---Singlet Scan---')
+with open(sys.argv[1]) as output_file_S:
+    for i,line in enumerate(output_file_S):
+        if ('IFCI_TUPLES') in line:
+            nlevel_split = line.split()
+            n = int(nlevel_split[1])
+            print ('Highest increment level detected as', n)
+        if ('Now Correlate') in line:
+            n_wise_terms_S.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start_S.append(i)
+        #if (next_line):
+        #    total_split = line.split()
+        #    n_wise_totals_S.append(float(total_split[-1]))
+        #    next_line = False
+        for inc in range(1,n+1):
+            if ('E%icx:' % inc) in line:
+                e_start_S.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end_S.append(i)
+        #        next_line = True
+            if ('E%i total E' % inc) in line:
+                e_split = line.split()
+                n_wise_energies_S.append(float(e_split[3]))
+        if ('Eref(CAS-CI)') in line:
+            e_ref_split = line.split()
+            e_ref_S = float(e_ref_split[1])
+#print (n_wise_energies_S)
+
+#print ('---Triplet Scan---')
+with open(sys.argv[2]) as output_file_T:
+    for i,line in enumerate(output_file_T):
+        if ('Now Correlate') in line:
+            n_wise_terms_T.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start_T.append(i)
+        #if (next_line):
+        #    total_split = line.split()
+        #    n_wise_totals_T.append(float(total_split[-1]))
+        #    next_line = False
+        for inc in range(1,n+1):
+            if ('E%icx:' % inc) in line:
+                e_start_T.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end_T.append(i)
+        #        next_line = True
+            if ('E%i total E' % inc) in line:
+                e_split = line.split()
+                n_wise_energies_T.append(float(e_split[3]))
+        if ('Eref(CAS-CI)') in line:
+            e_ref_split = line.split()
+            e_ref_T = float(e_ref_split[1])
+#print (n_wise_energies_T)
+
+for i in range(n-2):
+    constit_end_S.append(constit_start_S[i] + e_end_S[i+2] - e_start_S[i+2])
+    constit_count_S.append(e_end_S[i+2] - e_start_S[i+2] - 1)
+    constit_end_T.append(constit_start_T[i] + e_end_T[i+2] - e_start_T[i+2])
+    constit_count_T.append(e_end_T[i+2] - e_start_T[i+2] - 1)
+
+# Put energies in array and total
+for inc in range(1,n+1):
+    e_energies_S.append(np.loadtxt(sys.argv[1], usecols=-1, skiprows=e_start_S[inc-1]+1, max_rows=e_end_S[inc-1]-(e_start_S[inc-1]+1)))
+    e_energies_T.append(np.loadtxt(sys.argv[2], usecols=-1, skiprows=e_start_T[inc-1]+1, max_rows=e_end_T[inc-1]-(e_start_T[inc-1]+1)))
+#for i in e_energies_S:
+#    print(i)
+for inc in range(len(e_energies_S)):
+    n_wise_totals_S.append(np.sum(e_energies_S[inc]))
+    n_wise_totals_T.append(np.sum(e_energies_T[inc]))
+
+# Set energies that are zeros to really small
+for i in range(len(e_energies_S)):
+    e_energies_S[i] = np.where((abs(e_energies_S[i]) > 1e-9), e_energies_S[i], -1e-9)
+for i in range(len(e_energies_T)):
+    e_energies_T[i] = np.where((abs(e_energies_T[i]) > 1e-9), e_energies_T[i], -1e-9)
+
+# Put pairwise constituents into array
+n3_constit_S.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,4,5,6,-1), skiprows=constit_start_S[0]+1, max_rows=constit_count_S[0]))
+n3_constit_S = np.asarray(n3_constit_S).reshape((constit_count_S[0],7))
+n3_constit_T.append(np.loadtxt(sys.argv[2], usecols=(0,1,2,4,5,6,-1), skiprows=constit_start_T[0]+1, max_rows=constit_count_T[0]))
+n3_constit_T = np.asarray(n3_constit_T).reshape((constit_count_T[0],7))
+if n >= 4:
+    n4_constit_S.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,3,5,6,7,8,-1), skiprows=constit_start_S[1]+1, max_rows=constit_count_S[1]))
+    n4_constit_S = np.asarray(n4_constit_S).reshape((constit_count_S[1],9))
+    n4_constit_T.append(np.loadtxt(sys.argv[2], usecols=(0,1,2,3,5,6,7,8,-1), skiprows=constit_start_T[1]+1, max_rows=constit_count_T[1]))
+    n4_constit_T = np.asarray(n4_constit_T).reshape((constit_count_T[1],9))
+e_energies_S = np.asarray(e_energies_S)
+e_energies_T = np.asarray(e_energies_T)
+
+# Print body quantities found
+print ('--Singlet Bodies--')
+for inc in range(len(e_energies_S)):
+    print ('Increment',inc+1,'# of bodies =',len(e_energies_S[inc]))
+if n == 3:
+    print ('Totals:',n_wise_terms_S[0],'pairs,',n_wise_terms_S[1],'triads')
+elif n == 4:
+    print ('Totals:',n_wise_terms_S[0],'pairs,',n_wise_terms_S[1],'triads,',n_wise_terms_S[2],'quads')
+
+print ('--Triplet Bodies--')
+for inc in range(len(e_energies_T)):
+    print ('Increment',inc+1,'# of bodies =',len(e_energies_T[inc]))
+if n == 3:
+    print ('Totals:',n_wise_terms_T[0],'pairs,',n_wise_terms_T[1],'triads')
+elif n == 4:
+    print ('Totals:',n_wise_terms_T[0],'pairs,',n_wise_terms_T[1],'triads,',n_wise_terms_T[2],'quads')
+
+def magnitude(x):
+    return np.log10(np.absolute(x))
+
+ref_gap=(e_ref_T-e_ref_S)*2.1947e5
+print ('Reference E:',ref_gap)
+
+#gaps=(np.array(n_wise_energies_T)-np.array(n_wise_energies_S))*2.1947e5
+#for inc in range(1,n+1):
+#    print (('E%i total E:' % inc),gaps[inc-1])
+
+n_wise_gaps = np.asarray(n_wise_totals_T)-np.asarray(n_wise_totals_S)
+#print ('n_wise_totals_S:',n_wise_totals_S)
+#print ('n_wise_totals_T:',n_wise_totals_T)
+print ('n_wise_gaps:',n_wise_gaps)
+#gaps=(np.array(n_wise_totals_T)-np.array(n_wise_totals_S))*2.1947e5
+for i in range(len(n_wise_gaps)-1,0,-1):
+    n_wise_gaps[i] += np.sum(n_wise_gaps[:i])
+gaps_wn=np.asarray(n_wise_gaps)*2.1947e5
+print ('gaps_wn:',gaps_wn)
+for inc in range(1,n+1):
+    print (('E%i total E:' % inc),gaps_wn[inc-1]+ref_gap)
+
+np.save('/Users/alanrask/Desktop/Paper/plot_test/save.npy',n_wise_gaps,allow_pickle=True)
+n_wise_gaps = np.load('/Users/alanrask/Desktop/Paper/plot_test/save.npy',allow_pickle=True)
+
+print (os.getcwd())
+
+exit()
+
+# Histogram for n=3 energies (T-S) under thresh
+# thresh_scan for histograms per threshold
+# narrow for over/under plot
+
+#thresh_scan = np.logspace(-5,-2,7) # good for full range
+thresh_scan = np.logspace(-4,-2,3) # good for testing
+
+nrw_bottom = -1.5
+nrw_top = -5.5
+#nrw_bottom = -2
+#nrw_top = -5
+#nrw_step = 1    # testing range
+#nrw_step = 0.1  # good range
+#nrw_step = 0.05 # excessive range
+nrw_step = 0.01 # ridiculously excessive range
+#nrw_step = 0.001 # so i heard u liek excessive...
+nrw_points = int(1+(nrw_bottom-nrw_top)/nrw_step)
+print ('gap step:',nrw_step,'gap_points',nrw_points)
+thresh_scan_narrow = np.logspace(nrw_top,nrw_bottom,nrw_points) 
+
+bins3 = np.linspace(1,9,17)
+
+sums_over_S = []
+sums_over_T = []
+sums_under_S = []
+sums_under_T = []
+count_over_S = []
+count_over_T = []
+count_under_S = []
+count_under_T = []
+trues_container_S = []
+trues_container_T = []
+body_count_S = []
+body_count_T = []
+n3_over_gaps_per_scale = []
+n3_under_gaps_per_scale = []
+
+with open('bodies_per_cutoff_S.txt','w') as f:
+    f.write('--Singlet Removed Bodies Per Cutoff--\n')
+
+with open('bodies_per_cutoff_T.txt','w') as f:
+    f.write('--Triplet Removed Bodies Per Cutoff--\n')
+
+# Loop over cutoff scan to build plots with narrow discretization
+for step,i_thresh in enumerate(thresh_scan_narrow):
+    #print ('current cutoff:',np.around(np.log10(i_thresh),2))
+    n3_trues_S = []
+    for row in range(len(n3_constit_S)):
+        #print ('i_thresh:',i_thresh,'row:',row,'n3_constit_S[row]',n3_constit_S[row])
+        n3_include_S = np.ma.masked_where(n3_constit_S[row][3:6] > i_thresh, n3_constit_S[row][3:6])
+        n3_trues_S.append(np.sum(n3_include_S.mask))
+    n3_trues_S = np.asarray(n3_trues_S).reshape((constit_count_S[0],1))
+    n3_constit_S = np.hstack((n3_constit_S,n3_trues_S))
+    trues_container_S.append(n3_trues_S)
+    n3_trues_T = []
+    for row in range(len(n3_constit_T)):
+        n3_include_T = np.ma.masked_where(n3_constit_T[row][3:6] > i_thresh, n3_constit_T[row][3:6])
+        n3_trues_T.append(np.sum(n3_include_T.mask))
+    n3_trues_T = np.asarray(n3_trues_T).reshape((constit_count_T[0],1))
+    n3_constit_T = np.hstack((n3_constit_T,n3_trues_T))
+    trues_container_T.append(n3_trues_T)
+
+    sum_over = 0
+    sum_under = 0
+    count_above = 0
+    count_below = 0
+    for i, energy in enumerate(e_energies_S[2]):
+        if n3_trues_S[i] >= 2:
+            sum_over += energy
+            count_above += 1
+        else:
+            sum_under += energy
+            count_below += 1
+
+    sums_over_S.append(sum_over)
+    sums_under_S.append(sum_under)
+    count_over_S.append(count_above)
+    count_under_S.append(count_below)
+    #print ('S -- power:',np.around(np.log10(i_thresh),1),\
+    #    'sum over:',np.format_float_scientific(sum_over,precision=4),\
+    #    'sum under:',np.format_float_scientific(sum_under,precision=4),\
+    #    'count over:',count_above,'count under:',count_below)
+    n3_constit_S = np.delete(n3_constit_S, -1, axis=1)
+
+    sum_over = 0
+    sum_under = 0
+    count_above = 0
+    count_below = 0
+    for i, energy in enumerate(e_energies_T[2]):
+        if n3_trues_T[i] >= 2:
+            sum_over += energy
+            count_above += 1
+        else:
+            sum_under += energy
+            count_below += 1
+    sums_over_T.append(sum_over)
+    sums_under_T.append(sum_under)
+    count_over_T.append(count_above)
+    count_under_T.append(count_below)
+    #print ('T -- power:',np.around(np.log10(i_thresh),1),\
+    #    'sum over:',np.format_float_scientific(sum_over,precision=4),\
+    #    'sum under:',np.format_float_scientific(sum_under,precision=4),\
+    #    'count over:',count_above,'count under:',count_below)
+    n3_constit_T = np.delete(n3_constit_T, -1, axis=1)
+
+    n3_over_gaps_per_scale.append(sums_over_T[step]-sums_over_S[step])
+    n3_under_gaps_per_scale.append(sums_under_T[step]-sums_under_S[step])
+
+    #print ('thresh:',np.around(np.log10(i_thresh),2))
+    #print (sums_over_T[step],'-',sums_over_S[step],'=',sums_over_T[step]-sums_over_S[step])
+    #print (sums_over_T[step]*2.1947e5,'-',sums_over_S[step]*2.1947e5,'=',(sums_over_T[step]-sums_over_S[step])*2.1947e5)
+
+    # Print bodies removed per cutoff scan, call attention to cutoffs with large jumps
+    body_count_S.append(0)
+    with open('bodies_per_cutoff_S.txt','a') as f:
+        if step != 0:
+            f.write('=== removed bodies for %s with total energy %s cm-1 ===\n' % (np.around(np.log10(i_thresh),2),(sums_over_T[-1] - sums_over_S[-1])*2.1947e5))
+            body_count_S.append(0)
+            f.write('  change in energy since last cutoff: %s mHa\n' % np.around((n3_over_gaps_per_scale[step] - n3_over_gaps_per_scale[step-1]),4))
+            if abs(n3_over_gaps_per_scale[step]-n3_over_gaps_per_scale[step-1]) > 1e-4:
+                f.write('   *** jump of more than 0.1 mHa found! ***\n') 
+            for body in range(len(trues_container_S[0])):
+                #print ('body:',body,'true?',trues_container_S[-1][body])
+                if trues_container_S[-1][body] <= 1:
+                    if trues_container_S[-2][body] >= 2:
+                        f.write('%s' % n3_constit_S[body][0:3])
+                        body_count_S[step]+=1
+                        #print (n3_constit_S[body][0:3])
+            if body_count_S[step] == 0:
+                f.write('    no bodies removed this cutoff\n\n')
+            else:
+                f.write('\n    count of removed bodies this cutoff: %s\n\n' % body_count_S[step])
+                #for true in range(len(n3_trues_S)):
+                #    if trues_container[i] = 
+
+    body_count_T.append(0)
+    with open('bodies_per_cutoff_T.txt','a') as f:
+        if step != 0:
+            f.write('=== removed bodies for %s with total energy %s cm-1 ===\n' % (np.around(np.log10(i_thresh),2),(sums_over_T[-1] - sums_over_S[-1])*2.1947e5))
+            body_count_T.append(0)
+            f.write('  change in energy since last cutoff: %s mHa\n' % np.around((n3_over_gaps_per_scale[step] - n3_over_gaps_per_scale[step-1]),4))
+            if abs(n3_over_gaps_per_scale[step]-n3_over_gaps_per_scale[step-1]) > 1e-4:
+                f.write('   *** jump of more than 0.1 mHa found! ***\n') 
+            for body in range(len(trues_container_T[0])):
+                if trues_container_T[-1][body] <= 1:
+                    if trues_container_T[-2][body] >= 2:
+                        f.write('%s' % n3_constit_T[body][0:3])
+                        body_count_T[step]+=1
+            if body_count_T[step] == 0:
+                f.write('    no bodies removed this cutoff\n\n')
+            else:
+                f.write('\n    count of removed bodies this cutoff: %s\n\n' % body_count_T[step])
+
+    if sum(body_count_S) != sum(body_count_T):
+        #print ('found a mismatched body count at thresh',np.around(np.log10(i_thresh),2),'with',body_count_S[step],'for singlet',body_count_T[step],'for triplet')
+        n3_over_gaps_per_scale[step] = n3_over_gaps_per_scale[step-1]
+
+#print ('n3_constit_S[0]:',n3_constit_S[0])
+#print ('new_bodies_per_thresh:',new_bodies_per_thresh)
+
+scaled_narrow = -np.array(np.log10(thresh_scan_narrow))
+
+#n3_over_gaps_per_scale = np.array(sums_over_T) - np.array(sums_over_S)
+#n3_under_gaps_per_scale = np.array(sums_under_T) - np.array(sums_under_S)
+print (sums_over_T[0],'-',sums_over_S[0],'=',n3_over_gaps_per_scale[0])
+print (sums_under_T[-1],'-',sums_under_S[-1],'=',n3_under_gaps_per_scale[-1])
+n3_over_gaps_per_scale = np.asarray(n3_over_gaps_per_scale)*2.1947e5
+n3_under_gaps_per_scale = np.asarray(n3_under_gaps_per_scale)*2.1947e5
+
+n3_gap_per_scale=[]
+#print (n_wise_gaps[2]*2.1947e5)
+for term in n3_over_gaps_per_scale:
+    #print ('term:',term)
+    n3_gap_per_scale.append(term+gaps_wn[1]+ref_gap)
+
+with open('gap_scan.txt','w') as f:
+    f.write('--Gaps Per Power (cm-1)--\n')
+    f.write('power     gap        # over / # under\n')
+    for i,i_thresh in enumerate(thresh_scan_narrow):
+        f.write('%s  %s  %s  %s\n' % (np.around(np.log10(i_thresh),2),n3_gap_per_scale[i],count_over_S[i],count_under_S[i]))
+        #f.write('power:',np.around(np.log10(i_thresh),2),'gap:',n3_gap_per_scale[i], \
+        #    'count over:',count_over_S[i],'count under:',count_under_S[i])
+
+exit()
+
+#print ('--Gaps Per Power (cm-1)--')
+#print ('power     gap        # over / # under')
+#for i,i_thresh in enumerate(thresh_scan_narrow):
+#    print (np.around(np.log10(i_thresh),2),n3_gap_per_scale[i],count_over_S[i],count_under_S[i])
+    #print ('power:',np.around(np.log10(i_thresh),2),'gap:',n3_gap_per_scale[i], \
+    #    'count over:',count_over_S[i],'count under:',count_under_S[i])
+
+#print ('n3_gap_per_scale:',n3_gap_per_scale)
+#for inc in range(1,n+1):
+#    total_gap+=gaps_wn[inc-1]-ref_gap
+#print ('total gap =',total_gap+ref_gap)
+#print ('top gap =',n3_over_gaps_per_scale[0]+gaps_wn[1]+gaps_wn[0])
+#print ('with ref gap =',n3_over_gaps_per_scale[0]+ref_gap)
+
+window = 0.0002 * 2.1947e5
+print ('green window:',window,'cm-1')
+#expt_gap_wn = 130 # Zn actual experimental gap in cm-1
+expt_gap_wn = 214 # V actual experimental gap in cm-1
+expt_gap_kc = expt_gap_wn*2.8591e-3 # convert to cm-1 to kcal/mol
+expt_gap_ha = expt_gap_kc*1.5936e-3 # convert kcal/mol to Ha
+
+with open('gap_scan.txt','a') as f:
+    f.write('\nexpt gap for reference:\n%s cm-1 \n%s kcal/mol \n%s Ha' % (expt_gap_wn,np.around(expt_gap_kc,4),np.around(expt_gap_ha,6)))
+
+axhline_include = []
+for i,term in enumerate(n3_over_gaps_per_scale):
+    #print ('checking term:',term,'against:',n3_over_gaps_per_scale[0])
+    if abs(n3_over_gaps_per_scale[0])-window <= abs(term) <= abs(n3_over_gaps_per_scale[0])+window:
+        #axhline_len += 1/len(n3_over_gaps_per_scale)
+        axhline_include.append(scaled_narrow[i])
+    else:
+        break
+print ('axhline_include from',np.around(axhline_include[-1],2),'to',np.around(axhline_include[0],2))
+green_top = n3_over_gaps_per_scale[0]+window
+green_top_gap = n3_gap_per_scale[0]+window
+if (n3_over_gaps_per_scale[0]-window < 0):
+    green_bottom = 0
+else:
+    green_bottom = n3_over_gaps_per_scale[0]-window
+#if (n3_gap_per_scale[0]-window < n3_gap_per_scale[-1]):
+#    green_bottom_gap = n3_gap_per_scale[-1]
+#else:
+#    green_bottom_gap = n3_gap_per_scale[0]-window
+green_bottom_gap = n3_gap_per_scale[0]-window
+
+# 3s means sum, 3c means count, 3b means both
+plt3s, pax3s = plt.subplots()
+plt3s_title = ('plot_n3s_diff_'+sys.argv[1])[:-4]
+plt3s_label = ('T-S Sum for n=3 Terms from n=2 Terms Above Scanning Threshold')
+#plt3s_label = ('n=2->3 check for T-S Sum, total gap='+str(np.around(gaps[2],decimals=2))+'cm-1')
+pax3s.fill_between(axhline_include,green_top,green_bottom,color='#53e669')
+#pax3s.axhline(y=sums_over[0],color='r',linewidth=20,xmin=0.7,xmax=1)
+#pax3s.plot(scaled_narrow,n3_over_gaps_per_scale,label='over thresh diff, full gap='+str(np.around(gaps[2],decimals=2))+'cm-1',color='#2683c6',linewidth=3)
+pax3s.plot(scaled_narrow,n3_over_gaps_per_scale,label='over thresh diff',color='#2683c6',linewidth=3)
+#pax3s.plot(scaled_narrow,n3_under_gaps_per_scale,label='under',color='#ffd600',linewidth=3)
+pax3s.set_title(plt3s_label)
+pax3s.set_xlabel('-log10(n=2 check)',fontsize=12)
+#pax3s.set_ylabel('T-S sum of n=3 energies (Ha)',fontsize=12)
+pax3s.set_ylabel('T-S sum of n=3 energies (cm-1)',fontsize=12)
+pax3s.legend(fontsize=12)
+#plt3s.subplots_adjust(left=0.15)
+plt3s.savefig(plt3s_title+'.png')
+
+# tg for total gap in cm-1
+plt3tg, pax3tg = plt.subplots()
+plt3tg_title = ('plot_n3tg_diff_'+sys.argv[1])[:-4]
+plt3tg_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+pax3tg.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+pax3tg.axhline(y=expt_gap_wn,color='r',linewidth=3)
+pax3tg.plot(scaled_narrow,n3_gap_per_scale,label='gap per thresh',color='#2683c6',linewidth=3)
+pax3tg.set_title(plt3tg_label)
+pax3tg.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3tg.set_ylabel('Total T-S n=3 Gap (cm-1)',fontsize=12)
+#pax3tg.legend(fontsize=12)
+plt3tg.savefig(plt3tg_title+'.png')
+
+
+## smooth interpolated B-Spline (is) version of tg
+#snis = np.linspace(1.5,5.5,81) # scaled_narrow interpolated spline
+#print ('snis:',snis)
+#a_BSpline = interpolate.make_interp_spline(scaled_narrow,n3_gap_per_scale)
+#ngis = a_BSpline(snis) # n3_gap_per_scale interpolated spline
+#
+#plt3is, pax3is = plt.subplots()
+#plt3is_title = ('plot_n3is_diff_'+sys.argv[1])[:-4]
+#plt3is_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+##pax3is.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+#pax3is.axhline(y=expt_gap_wn,color='r',linewidth=3)
+#pax3is.plot(snis,ngis,label='gap per thresh',color='#2683c6',linewidth=3)
+#pax3is.set_title(plt3is_label)
+#pax3is.set_xlabel('-log10(n=2 check)',fontsize=12)
+#pax3is.set_ylabel('Total T-S n=3 Gap (cm-1)',fontsize=12)
+##pax3is.legend(fontsize=12)
+#plt3is.savefig(plt3is_title+'.png')
+
+
+## bar graph with discontinuous discretization
+#dis_gaps = [] # dis for discontinuous
+#for i in range(len(n3_gap_per_scale)):
+#    if (i+1) % 5 == 0:
+#        dis_gaps.append(sum(np.asarray(n3_gap_per_scale[i:i+5]))/5)
+#
+#print ('dis_gaps:\n',dis_gaps)
+#
+#bar3, bax3 = plt.subplots()
+##bax3 = fig.add_axes([0,0,1,1])
+#bar3_title = ('bar_n3_diff_'+sys.argv[1])[:-4]
+#x_range = np.linspace(1,9,17) # 33 for 0.25
+##langs = ['C', 'C++', 'Java', 'Python', 'PHP']
+##students = [23,17,35,29,12]
+#bax3.bar(x_range,dis_gaps)
+#bar3.savefig(bar3_title+'.png')
+
+
+# kc for kcal/mol
+green_top_gap*=2.8591e-3
+green_bottom_gap*=2.8591e-3
+n3_gap_per_scale = np.asarray(n3_gap_per_scale)*2.8591e-3
+print ('expt gap:',expt_gap_kc,'n=3 gap:',n3_gap_per_scale[0],'in kcal/mol')
+#print ('--Gaps Per Power (kcal/mol)--')
+#print ('power     gap        # over / # under')
+#for i,i_thresh in enumerate(thresh_scan_narrow):
+#    print (np.around(np.log10(i_thresh),2),n3_gap_per_scale[i],count_over_S[i],count_under_S[i])
+
+plt3kc, pax3kc = plt.subplots()
+plt3kc_title = ('plot_n3kc_diff_'+sys.argv[1])[:-4]
+plt3kc_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+pax3kc.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+pax3kc.axhline(y=expt_gap_kc,color='r',linewidth=3)
+pax3kc.plot(scaled_narrow,n3_gap_per_scale,label='gap per thresh',color='#2683c6',linewidth=3)
+pax3kc.set_title(plt3kc_label)
+pax3kc.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3kc.set_ylabel('Total T-S n=3 Gap (kcal/mol)',fontsize=12)
+pax3kc.set_ylim(top=0.8,bottom=0.0)
+#pax3kc.legend(fontsize=12)
+plt3kc.savefig(plt3kc_title+'.png')
+
+## ec for error cutoff
+#err_per_body=1e-5
+#err_from_terms=[]
+#err_per_cutoff=[]
+#for i in range(len(count_over_S)):
+#    err_from_terms.append(err_per_body*count_over_S[i])
+#    err_per_cutoff.append(err_from_terms[i]/thresh_scan_narrow[i])
+#    #print ('cutoff',np.log10(thresh_scan_narrow[i]),'has total error of:',err_from_terms[i],'and val on x-axis of',err_per_cutoff[i])
+#
+#plt3ec, pax3ec = plt.subplots()
+#plt3ec_title = ('plot_n3ec_diff_'+sys.argv[1])[:-4]
+#plt3ec_label = ('Total T-S n=3 Gap from n=2 Terms Above Scanning Threshold')
+##pax3ec.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+#pax3ec.axhline(y=expt_gap_kc,color='r',linewidth=3)
+#pax3ec.plot(err_per_cutoff,n3_gap_per_scale,label='gap per thresh',color='#2683c6',linewidth=3)
+#pax3ec.set_title(plt3ec_label)
+#pax3ec.set_xlabel('(error per body * # of terms at cutoff) / cutoff',fontsize=12)
+#pax3ec.set_ylabel('Total T-S n=3 Gap (kcal/mol)',fontsize=12)
+##pax3ec.legend(fontsize=12)
+#plt3ec.savefig(plt3ec_title+'.png')
+
+# vc for versus cutoff
+n3_gap_per_scale = np.asarray(n3_gap_per_scale)*1.5936e-3 # convert kcal/mol to Ha
+gap_diff = n3_gap_per_scale - n3_gap_per_scale[0]
+diff_per_cutoff=[]
+for i in range(len(n3_gap_per_scale)):
+    diff_per_cutoff.append(gap_diff[i]/thresh_scan_narrow[i])
+    #print ('n3_gap_per_scale:',n3_gap_per_scale[i],'scale',np.around(-np.log10(thresh_scan_narrow[i]),2),'gap_diff:',gap_diff[i],'diff_per_cutoff:',diff_per_cutoff[i])
+
+plt3vc, pax3vc = plt.subplots()
+plt3vc_title = ('plot_n3vc_diff_'+sys.argv[1])[:-4]
+plt3vc_label = ('Difference in T-S Gap from Total 3-body per 3-body Cutoff')
+#pax3vc.fill_between(axhline_include,green_top_gap,green_bottom_gap,color='#53e669')
+#pax3vc.axhline(y=expt_gap_ha,color='r',linewidth=3)
+pax3vc.plot(scaled_narrow,diff_per_cutoff,label='gap per thresh',color='#2683c6',linewidth=3)
+pax3vc.set_title(plt3vc_label)
+pax3vc.set_xlabel('-log10(cutoff)',fontsize=12)
+pax3vc.set_ylabel('T-S Gap - Total n=3 Gap / cutoff',fontsize=12)
+#pax3vc.legend(fontsize=12)
+plt3vc.savefig(plt3vc_title+'.png')
+
