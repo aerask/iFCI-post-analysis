@@ -1,0 +1,608 @@
+#!/usr/local/bin/python3
+import sys
+import os
+import numpy as np
+import copy
+from collections import Counter
+from matplotlib import pyplot as plt
+
+"""
+Code written Jan-Mar 2020. 
+Scans iFCI output and saves correlation energies of n=1-4. 
+Input: ./ifci_e_scan.py ifci_output.out
+Output: 
+  - printout of maximum/minimum energies per increment
+  - file Encx.txt containing all energies per increment
+  - histogram of energies according to energy magnitude
+  - scan of n=3
+"""
+
+n=0
+e_start=[]
+e_end=[]
+e_energies=[]
+n3_elements=[]
+constit_start=[]
+constit_end=[]
+constit_count=[]
+n3_constit=[]
+n4_constit=[]
+n_wise_terms=[]
+
+# Read file, set line flags, and search for energies
+with open(sys.argv[1]) as output_file:
+    for i,line in enumerate(output_file):
+        if ('IFCI_TUPLES') in line:
+            nlevel_split = line.split()
+            n = int(nlevel_split[1])
+            print ('Highest increment level detected as', n)
+        if ('Now Correlate') in line:
+            n_wise_terms.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start.append(i)
+        for inc in range(1,n+1):
+            if ('E%icx:' % inc) in line:
+                e_start.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end.append(i)
+
+for i in range(n-2):
+    #print ('i:',i,'constit_start[i]:',constit_start[i])
+    constit_end.append(constit_start[i] + e_end[i+2] - e_start[i+2])
+    #print ('constit_end[i]:',constit_end[i])
+    constit_count.append(e_end[i+2] - e_start[i+2] - 1)
+    #print ('constit_count:',constit_count[i])
+
+# Put energies in array
+for inc in range(1,n+1):
+    e_energies.append(np.loadtxt(sys.argv[1], usecols=-1, skiprows=e_start[inc-1]+1, max_rows=e_end[inc-1]-(e_start[inc-1]+1)))
+
+# Set energies that are zeros to really small
+for i in range(len(e_energies)):
+    e_energies[i] = np.where((abs(e_energies[i]) > 1e-9), e_energies[i], -1e-9)
+
+# Put pairwise constituents into array
+n3_constit.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,4,5,6,-1), skiprows=constit_start[0]+1, max_rows=constit_count[0]))
+n3_constit = np.asarray(n3_constit).reshape((constit_count[0],7))
+if n >= 4:
+    n4_constit.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,3,5,6,7,8,-1), skiprows=constit_start[1]+1, max_rows=constit_count[1]))
+    n4_constit = np.asarray(n4_constit).reshape((constit_count[1],9))
+e_energies = np.asarray(e_energies)
+
+# Print body quantities found
+for inc in range(len(e_energies)):
+    print ('Increment',inc+1,'# of bodies =',len(e_energies[inc]))
+if n == 3:
+    print ('Totals:',n_wise_terms[0],'pairs,',n_wise_terms[1],'triads')
+elif n == 4:
+    print ('Totals:',n_wise_terms[0],'pairs,',n_wise_terms[1],'triads,',n_wise_terms[2],'quads')
+
+# Put energies from array in text file
+with open('Encx_%s.txt' % (sys.argv[1])[:-4],'w') as f:
+    for inc in range(len(e_energies)):
+        N=inc+1
+        f.write('Increment %s\n' % N)
+        for b in range(len(e_energies[inc])):
+            f.write('%s\n' % e_energies[inc][b])
+        f.write('\n')
+
+# Do it again but in Mathematica formatting
+with open('mat_input_%s.txt' % (sys.argv[1])[:-4],'w') as f:
+    for inc in range(len(e_energies)):
+        N=inc+1
+        f.write('Increment %s\n{' % N)
+        for b in range(len(e_energies[inc])):
+            if b==(len(e_energies[inc])-1):
+                f.write('%s' % e_energies[inc][b])
+            else:
+                f.write('%s,' % e_energies[inc][b])
+        f.write('}\n')
+    #f.write('\nPlain print:\n')
+    #f.write('%s' % e_energies)
+
+def magnitude(x):
+    return np.log10(np.absolute(x))
+
+# Generate histogram for scale of n correlation energies
+fig1, ax1 = plt.subplots()
+for inc in range(0,n):
+    minmax = [min(list(e_energies[inc])),max(list(e_energies[inc]))]
+    minmaxmag = [magnitude(min(list(e_energies[inc]))),magnitude(max(list(e_energies[inc])))]
+    print ('min/max for inc = ',inc+1,':',minmax)
+    print ('min/max magnitudes for inc = ',inc+1,':',minmaxmag)
+
+#bins1 = np.linspace(-9,-1,9)
+bins1 = np.linspace(1,9,9)
+mag_e_energies = [-magnitude(val) for val in e_energies]
+
+for inc in range(0,n):
+  print ('n =',inc+1,'spread of terms:',np.histogram(mag_e_energies[inc],bins=bins1)[0])
+
+fig_title1 = ('histall_'+sys.argv[1])[:-4]
+#label1 = ('Scale of all terms per increment with n='+str(n)+' for '+sys.argv[1])[:-4]
+label1 = ('Scale of All Terms Per Increment')
+if n == 3:
+    ax1.hist(mag_e_energies,bins=bins1,stacked=False, \
+        label=('1-body: '+str(len(e_energies[0]))+' terms', \
+        '2-body: '+str(len(e_energies[1]))+' terms', \
+        '3-body: '+str(len(e_energies[2]))+' terms'))
+elif n == 4:
+    ax1.hist(mag_e_energies,bins=bins1,stacked=False, \
+        label=('1-body: '+str(len(e_energies[0]))+' terms', \
+        '2-body: '+str(len(e_energies[1]))+' terms', \
+        '3-body: '+str(len(e_energies[2]))+' terms', \
+        '4-body: '+str(len(e_energies[3]))+' terms'))
+ax1.set_title(label1,fontsize=14)
+ax1.set_xlabel('-log10(|energies|)',fontsize=13)
+ax1.set_ylabel('count',fontsize=13)
+ax1.legend()
+fig1.savefig(fig_title1+'.png')
+
+
+#fig1semi, ax1semi = plt.subplots()
+#fig_title1semi = ('semi_'+sys.argv[1])[:-4]
+#ax1semi.semilogy(mag_e_energies)
+#fig1semi.savefig(fig_title1semi+'.png')
+#
+#
+#count_per_mag = []
+#floor_e_energies = []
+#floor_hist = []
+#floor_hist_log = []
+#for inc in range(n):
+#    floor_e_energies.append(np.floor(mag_e_energies[inc]))
+#    floor_hist.append(np.histogram(floor_e_energies[inc],bins=np.linspace(1,9,9))[0])
+    #for val in floor_hist
+    #for scale in range(len(floor_hist[0])):
+    #    print ('scale:',scale)
+    #    for val in floor_hist[inc]:
+    #        if val != 0:
+    #            print ("val isn't zero")
+    #            np.append(floor_hist_log[inc],floor_hist
+    #    floor_hist_log.append([np.log10(floor_hist[inc][scale]) for val in floor_hist[inc] if val != 0])
+
+    ##over_thresh = [magnitude(body[6]) for body in n3_constit if body[7] >= 2]
+    #print ('floor_hist for',inc,':',floor_hist[inc])
+    ##print ('log10 floor_hist for',inc,':',np.log10(floor_hist[inc]))
+    #print ('floor_hist_log for',inc,':',floor_hist_log[inc])
+    ##print ('mag for inc',inc,':',mag_e_energies[inc])
+    ##print ('floor for inc',inc,':',floor_e_energies[inc])
+
+
+
+#print (np.arange(len(floor_hist[0])))
+#print (floor_hist)
+
+# Generate plot that's the same as the previous histogram but with log of count
+#fig1a, ax1a = plt.subplots()
+#fig_title1a = ('plotall_'+sys.argv[1])[:-4]
+#label1a = ('Scale of All Terms Per Increment (a)')
+#ax1a.bar(np.arange(len(floor_hist[0]))+1,np.log10(floor_hist[0]),label='n=1')
+#ax1a.bar(np.arange(len(floor_hist[0]))+1,np.log10(floor_hist[1]),label='n=2')
+#ax1a.bar(np.arange(len(floor_hist[0]))+1,np.log10(floor_hist[2]),label='n=3')
+##ax1a.bar(np.asarray(floor_e_energies[0]),np.linspace(1,9,9),label='n=1')
+##ax1a.bar(np.linspace(1,9,9),np.linspace(1,9,9),label='n=1')
+##rects1 = ax.bar(x - width/2, men_means, width, label='Men')
+#ax1a.set_title(label1a,fontsize=14)
+#fig1a.savefig(fig_title1a+'.png')
+
+
+
+#for inc in range(n):
+#    print ('inc:',inc)
+#    for val in mag_e_energies[inc]:
+#        print ('mag:',val)
+#        col = np.floor(
+#        count_per_mag
+        
+
+
+#print ('count',np.histogram(mag_e_energies,bins=np.linspace(1,9,17))[0])
+
+# Print how many terms per increment are under a certain threshold
+#thresh = 1e-4
+#e_energies_cp = copy.deepcopy(e_energies)
+#for inc in range(0,n):
+#    under_thresh = 0
+#    for i, energy in enumerate(e_energies[inc]):
+#        if abs(energy) < thresh: 
+#            e_energies_cp[inc][i] = 0
+#            under_thresh += 1
+#    if inc == 0: print (under_thresh,'/',e_energies[inc].size,'tuples under thresh of',thresh)
+#    if inc == 1: print (under_thresh,'/',e_energies[inc].size,'pairs under thresh of',thresh)
+#    if inc == 2: print (under_thresh,'/',e_energies[inc].size,'triads under thresh of',thresh)
+#    if inc == 3: print (under_thresh,'/',e_energies[inc].size,'quads under thresh of',thresh)
+
+# Generate histogram for scale of higher-order term correlation energies
+fig2, ax2 = plt.subplots()
+minmax2 = [min(list(n3_constit[:,6])),max(list(n3_constit[:,6]))]
+minmaxmag2 = [magnitude(min(list(n3_constit[:,6]))),magnitude(max(list(n3_constit[:,6])))]
+#print ('min/max n=3:',minmax2)
+#print ('min/max n=3 magnitudes:',minmaxmag2)
+
+#bins2 = np.linspace(-9,-1,17)
+bins2 = np.linspace(1,9,17)
+mag_n3_constit = [-magnitude(val) for val in n3_constit[:,6]]
+# ^ There's a bug here that happens occasionally
+
+fig_title2 = ('histn3_'+sys.argv[1])[:-4]
+#label2 = ('Scale of all terms for n=3 for '+sys.argv[1])[:-4]
+label2 = ('Magnitude of All 3-body Terms')
+ax2.hist(mag_n3_constit,bins=bins2,stacked=True,color=['#2683c6'],label=(str(len(mag_n3_constit))+' 3-body terms'))
+ax2.set_title(label2,fontsize=15)
+ax2.set_xlabel('log10(|energies|)',fontsize=15)
+ax2.set_ylabel('count',fontsize=15)
+ax2.legend(fontsize=14)
+fig2.savefig(fig_title2+'.png')
+
+if n == 4:
+    fig2a, ax2a = plt.subplots()
+    minmax2a = [min(list(n4_constit[:,8])),max(list(n4_constit[:,8]))]
+    minmaxmag2a = [magnitude(min(list(n4_constit[:,8]))),magnitude(max(list(n4_constit[:,8])))]
+    #print ('min/max n=4:',minmax2a)
+    #print ('min/max n=4 magnitudes:',minmaxmag2a)
+    
+    mag_n4_constit = [magnitude(val) for val in n4_constit[:,8]]
+    # ^ There may be a bug here that happens occasionally
+    
+    fig_title2a = ('histn4_'+sys.argv[1])[:-4]
+    #label2a = ('Scale of all terms for n=4 for '+sys.argv[1])[:-4]
+    label2a = ('Magnitude of All 4-body Terms')
+    ax2a.hist(mag_n4_constit,bins=bins2,stacked=True,color=['#2683c6'],label=(str(len(mag_n4_constit))+' 4-body terms'))
+    ax2a.set_title(label2a,fontsize=15)
+    ax2a.set_xlabel('log10(|energies|)',fontsize=15)
+    ax2a.set_ylabel('count',fontsize=15)
+    ax2a.legend(fontsize=14)
+    fig2a.savefig(fig_title2a+'.png')
+
+
+print ('---Now making pngs for n=3---')
+
+# Histogram for n=3 energies under thresh
+# thresh_scan for histograms per threshold
+# narrow for over/under plot
+
+#thresh_scan = np.logspace(-5,-2,7) # good for full range
+thresh_scan = np.logspace(-4,-2,3) # good for testing
+#thresh_scan_narrow = np.logspace(-4.5,-2,26) # good for full range
+#thresh_scan_narrow = np.logspace(-4,-2,3) # good for testing
+thresh_scan_narrow = np.logspace(-6,-1,51) # excessive range
+#thresh_scan_narrow = np.logspace(-4.4,-1.6,15) # green bar test
+bins3 = np.linspace(1,9,17)
+
+#alt_lin_scan = np.linspace(-4,-2,3)
+#alt_pow_scan = np.power(10,alt_lin_scan)
+#custom_scan = [-5.5,-4.5,-4.2,-4.0,-3.3,-1.5]
+custom_scan = [-4.2,-3.8,-2.8]
+#custom_scan = [-4.0,-3.0,-2.0]
+custom_pow_scan = np.power(10,custom_scan)
+thresh_scan = custom_pow_scan
+#print ('alt_lin_scan:',alt_lin_scan)
+#print ('alt_pow_scan:',alt_pow_scan)
+print ('thresh_scan:',thresh_scan)
+print ('custom_scan:',custom_scan)
+print ('custom_pow_scan:',custom_pow_scan)
+
+print ('--Running thresh_scan--')
+
+sums_over = []
+sums_under = []
+count_over = []
+count_under = []
+
+for i_thresh in thresh_scan:
+    #print ('checking for thresh: 10^',np.log10(i_thresh))
+
+    # Masking to set importance of 3-body energies based on 2-body energies
+    n3_trues = []
+    for row in range(len(n3_constit)):
+        n3_include = np.ma.masked_where(n3_constit[row][3:6] > i_thresh, n3_constit[row][3:6])
+        n3_trues.append(np.sum(n3_include.mask))
+    n3_trues = np.asarray(n3_trues).reshape((constit_count[0],1))
+    n3_constit = np.hstack((n3_constit,n3_trues))
+
+    # Sum 3-body energies based on significance
+    sum_over = 0
+    sum_under = 0
+    count_above = 0
+    count_below = 0
+    for i, energy in enumerate(e_energies[2]):
+        if n3_trues[i] >= 2:
+            sum_over += energy
+            count_above += 1
+        else:
+            sum_under += energy
+            count_below += 1
+    sums_over.append(sum_over)
+    sums_under.append(sum_under)
+    count_over.append(count_above)
+    count_under.append(count_below)
+
+    fig3, ax3 = plt.subplots()
+    over_thresh = [magnitude(body[6]) for body in n3_constit if body[7] >= 2]
+    under_thresh = [magnitude(body[6]) for body in n3_constit if body[7] < 2]
+    #print ('over_thresh',over_thresh)
+    #print ('under_thresh',under_thresh)
+    
+    over_thresh = -np.array(over_thresh)
+    under_thresh = -np.array(under_thresh)
+    #print ('count',np.histogram(over_thresh,bins=bins3)[0])
+    fig_title3 = ('n3_'+str(-np.log10(i_thresh))+'_'+sys.argv[1])[:-4]
+    #label3 = ('histogram of n=3 correlation energies by thresh '+str(i_thresh)+' for '+sys.argv[1])[:-4]
+    #label3 = ('thresh for n=2: 10^'+str(np.log10(i_thresh)))
+    label3 = ('Scale of 3-Body Terms Above/Below Threshold of 10^'+str(np.log10(i_thresh)))
+    ax3.hist([over_thresh,under_thresh],bins=bins3,stacked=True,color=['#2683c6','#ffd600'],label= \
+        #(str(len(over_thresh))+' over with sum: '+str(np.format_float_scientific(sum_over,precision=4)), \
+        #str(len(under_thresh))+' under with sum: '+str(np.format_float_scientific(sum_under,precision=4))))
+        (str(len(over_thresh))+' terms above', str(len(under_thresh))+' terms below'))
+    # alt yellow: fff15c ffd600 f6c040
+    ax3.set_title(label3,fontsize=12)
+    ax3.set_xlabel('-log10(|energies|)',fontsize=12)
+    ax3.set_ylabel('Count of 3-Body Terms',fontsize=12)
+    ax3.legend(fontsize=12)
+    fig3.savefig(fig_title3+'.png')
+
+    #print ('thresh:',np.log10(i_thresh),'sum over:',sums_over[-1],'sum under:',sums_under[-1])
+    print ('power:',np.around(np.log10(i_thresh),1),\
+        'sum over:',np.format_float_scientific(sum_over,precision=4),\
+        'sum under:',np.format_float_scientific(sum_under,precision=4),\
+        'count over:',count_above,'count under:',count_below)
+
+    n3_constit = np.delete(n3_constit, -1, axis=1)
+
+print ('--Running thresh_scan_narrow--')
+
+sums_over = []
+sums_under = []
+count_over = []
+count_under = []
+
+for i_thresh in thresh_scan_narrow:
+    n3_trues = []
+    for row in range(len(n3_constit)):
+        n3_include = np.ma.masked_where(n3_constit[row][3:6] > i_thresh, n3_constit[row][3:6])
+        n3_trues.append(np.sum(n3_include.mask))
+    n3_trues = np.asarray(n3_trues).reshape((constit_count[0],1))
+    n3_constit = np.hstack((n3_constit,n3_trues))
+
+    sum_over = 0
+    sum_under = 0
+    count_above = 0
+    count_below = 0
+    for i, energy in enumerate(e_energies[2]):
+        if n3_trues[i] >= 2:
+            sum_over += energy
+            count_above += 1
+        else:
+            sum_under += energy
+            count_below += 1
+    sums_over.append(sum_over)
+    sums_under.append(sum_under)
+    count_over.append(count_above)
+    count_under.append(count_below)
+    #print ('sum over:',sum_over)
+    #print ('sum under:',sum_under)
+    print ('power:',np.around(np.log10(i_thresh),1),\
+        'sum over:',np.format_float_scientific(sum_over,precision=4),\
+        'sum under:',np.format_float_scientific(sum_under,precision=4),\
+        'count over:',count_above,'count under:',count_below)
+    #if abs(sum_under) < 1e-3:
+    #    print ('below 1 mHa') 
+
+    n3_constit = np.delete(n3_constit, -1, axis=1)
+
+fraction_over = [val / n_wise_terms[1] for val in count_over]
+fraction_under = [val / n_wise_terms[1] for val in count_under]
+scaled_narrow = -np.array(np.log10(thresh_scan_narrow))
+#axhline_len = 0
+axhline_include = []
+for i,term in enumerate(sums_over):
+    #print ('checking term:',term,'against:',sums_over[0])
+    if abs(sums_over[0])-0.01 <= abs(term) <= abs(sums_over[0])+0.01:
+        #print ('found term')
+        #axhline_len += 1/len(sums_over)
+        axhline_include.append(scaled_narrow[i])
+    else:
+        break
+#print ('axhline_len:',axhline_len)
+#print ('1-axhline_len:',1-axhline_len)
+#print ('min sums_over:',min(sums_over),'max sums_over',max(sums_over))
+#print ('scaled_narrow:',scaled_narrow)
+#print ('axhline_include:',axhline_include)
+
+# 3s means sum, 3c means count, 3b means both
+plt3s, pax3s = plt.subplots()
+plt3s_title = ('plot_n3s_'+sys.argv[1])[:-4]
+plt3s_label = ('Sum of n=3 Terms from n=2 Terms Above Scanning Threshold')
+pax3s.fill_between(axhline_include,sums_over[0]+0.01,sums_over[0]-0.01,color='#53e669')
+#pax3s.axhline(y=sums_over[0],color='#53e669',linewidth=20,xmin=1-axhline_len,xmax=1)
+pax3s.plot(scaled_narrow,sums_over,label='over thresh sum',color='#2683c6',linewidth=3)
+#pax3s.plot(scaled_narrow,sums_under,label='under',color='#ffd600',linewidth=3)
+pax3s.set_title(plt3s_label)
+pax3s.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3s.set_ylabel('sum of n=3 energies (Ha)',fontsize=12)
+pax3s.set_ylim(bottom=min(sums_over)*1.1,top=max(sums_over)*2)
+#pax3s.legend(fontsize=12)
+plt3s.savefig(plt3s_title+'.png')
+
+plt3c, pax3c = plt.subplots()
+plt3c_title = ('plot_n3c_'+sys.argv[1])[:-4]
+plt3c_label = ('Fraction of n=3 Terms from n=2 Terms Above Scanning Threshold')
+#pax3c.plot(scaled_narrow,count_over,label='over',color='#2683c6',linewidth=3)
+#pax3c.plot(scaled_narrow,count_under,label='under',color='#ffd600',linewidth=3)
+pax3c.plot(scaled_narrow,fraction_over,label='over thresh',color='#2683c6',linewidth=3)
+#pax3c.plot(scaled_narrow,fraction_under,label='under',color='#ffd600',linewidth=3)
+pax3c.set_title(plt3c_label)
+pax3c.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3c.set_ylabel('fraction of n=3 energies',fontsize=12)
+pax3c.set_ylim(bottom=0,top=n_wise_terms[1])
+#pax3c.set_ylim(bottom=0,top=1)
+#pax3c.legend(fontsize=12)
+plt3c.savefig(plt3c_title+'.png')
+
+plt3sb, pax3sb = plt.subplots()
+plt3sb_title = ('plot_n3sc_'+sys.argv[1])[:-4]
+plt3sb_label = ('Sum and Count of n=3 Terms from n=2 Terms Above Scanning Threshold')
+pax3cb = pax3sb.twinx()
+pax3sb.set_title(plt3sb_label)
+pax3sb.set_xlabel('-log10(n=2 check)',fontsize=12)
+pax3sb.set_ylabel('sum of n=3 energies (Ha)',fontsize=12)
+pax3cb.set_ylabel('count of n=3 terms',fontsize=12)
+plt3sb.gca().invert_yaxis()
+#pax3sb.set_ylim(bottom=-0.25,top=0.25)
+#pax3cb.set_ylim(bottom=n_wise_terms[1],top=0)
+#pax3sb.set_ylim(bottom=min(sums_over)*1.2,top=max(sums_over)*1.2)
+#pax3sb.axhline(y=sums_over[0]+0.01,color='r',linewidth=1)
+#pax3sb.axhline(y=sums_over[0]-0.01,color='r',linewidth=1)
+pax3sb.fill_between(axhline_include,sums_over[0]+0.01,sums_over[0]-0.01,color='#53e669')
+#pax3sb.axhline(y=sums_over[0],color='#53e669',linewidth=20,xmin=axhline_len,xmax=1)
+pax3sb.plot(scaled_narrow,sums_over,label='over thresh sum',color='#2683c6',linewidth=3)
+#pax3sb.plot(scaled_narrow,sums_under,label='under',color='#ffd600',linewidth=3)
+pax3cb.plot(scaled_narrow,count_over,label='over thresh count',color='#ffd600',linewidth=3,linestyle='dashed')
+#pax3cb.plot(scaled_narrow,count_under,label='under',color='#ffd600',linewidth=3,linestyle='dashed')
+pax3sb.legend(fontsize=12)
+#pax3cb.legend(fontsize=12)
+pax3sb = pax3s
+pax3cb = pax3c
+plt3sb.subplots_adjust(right=0.85,left=0.15)
+#plt3sb.subplots_adjust(right=0.85,bottom=0.3)
+plt3sb.savefig(plt3sb_title+'.png')
+
+with open('Encx_%s.txt' % (sys.argv[1])[:-4],'a') as f:
+    f.write('\n--sums per thresh step for n=3--\nOver:\n')
+    for i,val in enumerate(sums_over):
+        f.write('%s  %s\n' % (np.around(np.log10(thresh_scan_narrow[i]),1),val))
+    f.write('\nUnder:\n')
+    for i,val in enumerate(sums_under):
+        f.write('%s  %s\n' % (np.around(np.log10(thresh_scan_narrow[i]),1),val))
+
+# Not currently ready for n=4
+exit()
+
+if n != 4:
+    exit()
+
+print ('---Now making pngs for n=4---')
+
+sums_over = []
+sums_under = []
+
+# Histogram for n=4 energies under thresh
+for i_thresh in thresh_scan:
+    print ('checking for thresh: 10^',np.log10(i_thresh))
+
+    # Masking to set importance of 4-body energies based on 3-body energies
+    n4_trues = []
+    for row in range(len(n4_constit)):
+        n4_include = np.ma.masked_where(n4_constit[row][4:8] > i_thresh, n4_constit[row][4:8])
+        n4_trues.append(np.sum(n4_include.mask))
+    n4_trues = np.asarray(n4_trues).reshape((constit_count[1],1))
+    n4_constit = np.hstack((n4_constit,n4_trues))
+
+    sum_over = 0
+    sum_under = 0
+    for i, energy in enumerate(e_energies[3]):
+        if n4_trues[i] >= 2:
+            sum_over += energy
+        else:
+            sum_under += energy
+    sums_over.append(sum_over)
+    sums_under.append(sum_under)
+    #print ('sum over:',sum_over)
+    #print ('sum under:',sum_under)
+
+    fig4, ax4 = plt.subplots()
+    over_thresh = [magnitude(body[8]) for body in n4_constit if body[9] >= 2]
+    under_thresh = [magnitude(body[8]) for body in n4_constit if body[9] < 2]
+
+    fig_title4 = ('n4_'+str(-np.log10(i_thresh))+'_'+sys.argv[1])[:-4]
+    #label4 = ('histogram of n=4 correlation energies by thresh '+str(i_thresh)+' for '+sys.argv[1])[:-4]
+    label4 = ('thresh for n=3: 10^'+str(np.log10(i_thresh)))
+    #ax4.hist([over_thresh,under_thresh],bins=bins3,stacked=True,color=['#2683c6','#ffd600'],label= \
+    #    ('over: '+str(len(over_thresh)),'under: '+str(len(under_thresh))))
+    ax4.hist([over_thresh,under_thresh],bins=bins3,stacked=True,color=['#2683c6','#ffd600'],label= \
+        (str(len(over_thresh))+' over with sum: '+str(np.format_float_scientific(sum_over,precision=4)), \
+        str(len(under_thresh))+' under with sum: '+str(np.format_float_scientific(sum_under,precision=4))))
+    ax4.set_title(label4,fontsize=20)
+    ax4.set_xlabel('log10(|energies|)',fontsize=15)
+    ax4.set_ylabel('count of n=4 terms',fontsize=15)
+    ax4.legend(fontsize=12)
+    fig4.savefig(fig_title4+'.png')
+
+    n4_constit = np.delete(n4_constit, -1, axis=1)
+
+sums_over = []
+sums_under = []
+count_over = []
+count_under = []
+
+for i_thresh in thresh_scan_narrow:
+    n4_trues = []
+    for row in range(len(n4_constit)):
+        n4_include = np.ma.masked_where(n4_constit[row][4:8] > i_thresh, n4_constit[row][4:8])
+        n4_trues.append(np.sum(n4_include.mask))
+    n4_trues = np.asarray(n4_trues).reshape((constit_count[1],1))
+    n4_constit = np.hstack((n4_constit,n4_trues))
+
+    sum_over = 0
+    sum_under = 0
+    count_above = 0
+    count_below = 0
+    for i, energy in enumerate(e_energies[3]):
+        if n4_trues[i] >= 2:
+            sum_over += energy
+            count_above += 1
+        else:
+            sum_under += energy
+            count_below += 1
+    sums_over.append(sum_over)
+    sums_under.append(sum_under)
+    count_over.append(count_above)
+    count_under.append(count_below)
+    print ('power:',np.around(np.log10(i_thresh),1),\
+        'sum over:',np.format_float_scientific(sum_over,precision=4),\
+        'sum under:',np.format_float_scientific(sum_under,precision=4),\
+        'count over:',count_above,'count under:',count_below)
+    n4_constit = np.delete(n4_constit, -1, axis=1)
+
+plt4, pax4 = plt.subplots()
+plt4_title = ('plot_n4_'+sys.argv[1])[:-4]
+plt4_label = ('Sum of n=4 Terms from n=3 Terms Above Scanning Threshold')
+pax4.plot(np.log10(thresh_scan_narrow),sums_over,label='over',color='#2683c6',linewidth=3)
+pax4.plot(np.log10(thresh_scan_narrow),sums_under,label='under',color='#ffd600',linewidth=3)
+pax4.set_title(plt4_label)
+pax4.axhline(y=-1e-3,color='r',linewidth=1)
+pax4.set_xlabel('log10(n=3 check)',fontsize=12)
+pax4.set_ylabel('sum of n=4 energies',fontsize=12)
+pax4.legend(fontsize=12)
+plt4.savefig(plt4_title+'.png')
+
+# 4s means sum, 4c means count
+plt4s, pax4s = plt.subplots()
+plt4s_title = ('plot_n4s_'+sys.argv[1])[:-4]
+plt4s_label = ('Sum and Count of n=4 Terms from n=3 Terms Above Scanning Threshold')
+pax4c = pax4s.twinx()
+pax4s.set_title(plt4s_label)
+pax4s.set_xlabel('log10(n=3 check)',fontsize=12)
+pax4s.set_ylabel('sum of n=4 energies',fontsize=12)
+pax4c.set_ylabel('count of n=4 energies',fontsize=12)
+plt4s.gca().invert_yaxis()
+pax4s.plot(np.log10(thresh_scan_narrow),sums_over,label='over',color='#2683c6',linewidth=3)
+pax4s.plot(np.log10(thresh_scan_narrow),sums_under,label='under',color='#ffd600',linewidth=3)
+pax4c.plot(np.log10(thresh_scan_narrow),count_over,label='over',color='#2683c6',linewidth=3,linestyle='dashed')
+pax4c.plot(np.log10(thresh_scan_narrow),count_under,label='under',color='#ffd600',linewidth=3,linestyle='dashed')
+pax4s.axhline(y=-1e-3,color='r',linewidth=1)
+pax4s.legend(fontsize=12)
+pax4s = pax3s
+pax4c = pax3c
+plt4s.subplots_adjust(right=0.85,bottom=0.3)
+plt4s.savefig(plt4s_title+'.png')
+
+with open('Encx_%s.txt' % (sys.argv[1])[:-4],'a') as f:
+    f.write('\n--sums per thresh step for n=4--\nOver:\n')
+    for i,val in enumerate(sums_over):
+        f.write('%s  %s\n' % (np.around(np.log10(thresh_scan_narrow[i]),1),val))
+    f.write('\nUnder:\n')
+    for i,val in enumerate(sums_under):
+        f.write('%s  %s\n' % (np.around(np.log10(thresh_scan_narrow[i]),1),val))
+

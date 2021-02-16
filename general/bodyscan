@@ -1,0 +1,154 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+from scipy.special import comb
+from itertools import combinations
+
+print ('input line:',sys.argv)
+
+in_name = sys.argv[1]
+if in_name.endswith('.out'):
+    in_name = in_name[:-4]
+print ('input file:',in_name)
+
+n2 = np.load((os.getcwd()+'/%s_sorted_n2.npy' % in_name),allow_pickle=False)
+n3 = np.load((os.getcwd()+'/%s_sorted_n3.npy' % in_name),allow_pickle=False)
+print (n3.shape)
+#print (n3)
+#print (n3.dtype)
+n3[np.argsort(n3[:,0])]
+#n3[np.argsort(n3[:,1])]
+#n3[np.argsort(n3[:,2])]
+#for i in n3:
+#    print (i)
+
+a5g_order = np.array([1, 2, 4, 3, 25, 20, 9, 23, 12, 11, 10, 19, 18, 24, 21, 22, 5, 8, 7, 6, 13, 14, 15, 17, 16, 33, 30, 28, 27, 29, 31, 26, 32, 36, 37, 34, 35, 41, 38, 42, 39, 44, 40, 45, 43])
+a2g_order = np.array([1, 2, 3, 18, 19, 9, 4, 20, 10, 11, 12, 21, 22, 23, 24, 25, 5, 6, 7, 8, 13, 14, 15, 16, 17, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45])
+
+orbidx = []
+for i in sys.argv[2:]:
+    orbidx.append(int(i))
+orbidx.sort()
+print ('comparing orbitals:',orbidx)
+aryidx = [x - 2 for x in orbidx]
+#print ('looking at array for:',aryidx)
+
+orbidx_no_sig = orbidx
+for i in range(5,9):
+    orbidx_no_sig.remove(i)
+print ('orbitals without sigN:',orbidx_no_sig)
+
+lower = 5
+upper = 8
+
+# Find the pairs with desired orbitals
+compairs = []
+for i in aryidx:
+    for j in aryidx:
+        if i < j:
+            #print (i+2,'+',j+2,':',n2[i,j])
+            compairs.append((i+2,j+2,n2[i,j]))
+#print ('compared pairs:',compairs)
+
+# Calculate sum of pairs including all sigN
+compairs_mix = []
+sig_n_only_sum_n2 = 0
+if 5 and 6 and 7 and 8 in orbidx:
+    for pair in compairs:
+        if lower <= pair[0] <= upper and lower <= pair[1] <= upper:
+            sig_n_only_sum_n2 += pair[2]
+compairs_mix.append(("sigN",sig_n_only_sum_n2))
+
+# Find the traids with desired orbitals
+comtriads = []
+for triad in n3:
+    flag = 0
+    print ('triad:',np.sort(triad[0:3]),triad[-1])
+    for index in orbidx:
+        if index in triad[0:3]:
+            flag = 1
+    if flag == 1:
+        comtriads.append(triad)
+
+# Calculate sum of triads including all sigN
+comtriads_mix = []
+sig_n_only_sum_n3 = 0
+if all(list(range(lower,upper+1)) for i in orbidx):
+#if 5 and 6 and 7 and 8 in orbidx:
+    print ('looking for sigN')
+    for triad in comtriads:
+        #print ('current triad looking for sigN:',triad)
+        print ('all sigN?',np.sort(triad[0:3]))
+        if all(lower <= i <= upper for i in np.sort(triad[0:3])):
+        #if lower <= triad[0] <= upper \
+        #  and lower <= triad[1] <= upper \
+        #  and lower <= triad[2] <= upper:
+            print ('sigN traid:',triad[-1])
+            sig_n_only_sum_n3 += triad[-1]
+            #print ('sum:',sig_n_only_sum_n3)
+comtriads_mix.append(("sigN",sig_n_only_sum_n3))
+print ('comtriads_mix:',comtriads_mix[0])
+
+
+# Pair orbital scan - sum bodies including desired orb and sigN into one term
+for orb in orbidx:                            # loop thru orbs
+    sig_n_comb_sum_n2 = 0 
+    #print ('orb:',orb)
+    if not lower <= orb <= upper:             # check if orb is not a sigN
+        for pair in compairs:                 # loop thru pairs
+            if ((orb == pair[0]) and (lower <= pair[1] <= upper))\
+              or ((orb == pair[1]) and (lower <= pair[0] <= upper)):  # check if orb is in pair and if other orb is a sigN
+                #print ('pair:',pair)
+                sig_n_comb_sum_n2 += pair[2]
+        compairs_mix.append((orb,"sigN",sig_n_comb_sum_n2))
+        #for triad in comtriads:
+        #    if orb in triad[0:3]:
+        #        if 
+
+# Triad orbital scan - sum bodies including desired orb(WIP:) and sum bodies with desired orb and two sigN
+for orb in orbidx:
+    count = 0
+    sig_n_comb_sum_n3 = 0
+    for triad in comtriads:
+        if orb in triad[0:3] and not lower <= orb <= upper:
+            #print ('triad:',int(triad[0]),int(triad[1]),int(triad[2]))
+            sig_n_comb_sum_n3 += triad[-1]
+            count += 1
+    print ('current sum:',sig_n_comb_sum_n3,'with',count,'bodies')
+    comtriads_mix.append((orb,"2*sigN",sig_n_comb_sum_n3))
+#print ('count:',count)
+
+
+orbidx_combo = np.asarray(list(combinations(orbidx_no_sig,3)))
+#for i in list(orbidx_combo):
+#    print ('combo:',np.asarray(i))
+print (orbidx_combo)
+#for i in orbidx_combo:
+#    print ('combo:',i)
+
+if len(orbidx_no_sig) >= 3:
+    counter = 0
+    #print (comtriads)
+    for triad in comtriads:
+        #print ('current triad:',np.sort(triad[0:3]))
+        for combo in list(orbidx_combo):
+            #print ('  slice:',triad[0:3],'compare with combo:',combo[::-1])
+            #if all(np.sort(triad[0:3]) == combo[::-1]):
+            if all(np.sort(triad[0:3]) == combo):
+                counter += 1
+                print ('found triad:',triad)
+                comtriads_mix.append((combo[0],combo[1],combo[2],triad[-1]))
+    print (counter,'triads found with combinations of orbitals:',orbidx_no_sig)
+
+#for i in comtriads:
+#    print (i)
+
+print ('pairs:')
+for i in compairs_mix:
+    print (i)
+
+print ('triads:')
+for i in comtriads_mix:
+    print (i)
+

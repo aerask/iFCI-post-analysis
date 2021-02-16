@@ -1,0 +1,358 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+from scipy.special import comb
+import copy
+#import scipy
+from collections import Counter
+from matplotlib import pyplot as plt
+from itertools import combinations
+#from scipy.interpolate import make_interp_spline
+from datetime import datetime
+from io import StringIO
+
+"""
+Code written Jun 2020.
+Scans 2-body terms and estimates how many 3-body terms would be computed per 
+cutoff for both an all-terms computation and split.
+"""
+
+n=0
+e_start=[]
+e_end=[]
+e_energies=[]
+constit_start=[]
+constit_end=[]
+constit_count=[]
+n3_constit=[]
+n4_constit=[]
+n_wise_terms=[]
+n_wise_energies=[]
+n_wise_totals=[]
+e_ref=0
+e_ref_2=0
+next_line=False
+ncore=0
+pair_corr_line=0
+q_flag=0
+
+in_name = sys.argv[1]
+if in_name.endswith('.out'):
+    in_name = in_name[:-4]
+print ('input file:',in_name)
+
+# Read files, set line flags, and search for energies
+with open(sys.argv[1]) as output_file:
+    for i,line in enumerate(output_file):
+        if ('IFCI_TUPLES') in line:
+            nlevel_split = line.split()
+            n = int(nlevel_split[1])
+            print ('Highest increment level detected as', n)
+        if ('IFCI_QUINTETS') in line:
+            quintet_split = line.split()
+            q_flag = int(quintet_split[1])
+        if ('Now Correlate') in line:
+            n_wise_terms.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start.append(i)
+        for inc in range(1,n+1):
+            if ('E%icx:' % inc) in line:
+                e_start.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end.append(i)
+            if ('E%i total E' % inc) in line:
+                e_split = line.split()
+                n_wise_energies.append(float(e_split[3]))
+        if ('Eref(CAS-CI)') in line:
+            e_ref_split = line.split()
+            e_ref = float(e_ref_split[1])
+        if ('core:') in line:
+            core_split = line.split()
+            ncore = core_split[5]
+        if ('pairs correlation') in line:
+            pair_corr_line=i
+#print (n_wise_energies)
+print ('pair_corr_line:',pair_corr_line)
+line_total = i
+
+for i in range(n-2):
+    constit_end.append(constit_start[i] + e_end[i+2] - e_start[i+2])
+    constit_count.append(e_end[i+2] - e_start[i+2] - 1)
+
+# Put energies in array and total
+for inc in range(1,n+1):
+    e_energies.append(np.loadtxt(sys.argv[1], usecols=-1, skiprows=e_start[inc-1]+1, max_rows=e_end[inc-1]-(e_start[inc-1]+1)))
+for inc in range(len(e_energies)):
+    n_wise_totals.append(np.sum(e_energies[inc]))
+#for i,energy in enumerate(e_energies):
+#    print('n =',i+1,'energies:',energy)
+
+# Set energies that are zeros to really small
+for i in range(len(e_energies)):
+    e_energies[i] = np.where((abs(e_energies[i]) > 1e-9), e_energies[i], -1e-9)
+
+# Put pairwise constituents into array
+#e_energies = np.asarray(e_energies)
+n3_constit.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,4,5,6,-1), skiprows=constit_start[0]+1, max_rows=constit_count[0]))
+n3_constit = np.asarray(n3_constit).reshape((constit_count[0],7))
+if n >= 4:
+    n4_constit.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,3,5,6,7,8,-1), skiprows=constit_start[1]+1, max_rows=constit_count[1]))
+    n4_constit = np.asarray(n4_constit).reshape((constit_count[1],9))
+e_energies = np.asarray(e_energies)
+#for i in n3_constit:
+#    print(i)
+
+# Print body quantities found
+print ('--Bodies--')
+for inc in range(len(e_energies)):
+    print ('Increment',inc+1,'# of bodies =',len(e_energies[inc]))
+if n == 3:
+    print ('Totals:',n_wise_terms[0],'pairs,',n_wise_terms[1],'triads')
+elif n == 4:
+    print ('Totals:',n_wise_terms[0],'pairs,',n_wise_terms[1],'triads,',n_wise_terms[2],'quads')
+
+homo_tuple=np.max(n3_constit)
+print ('homotuple',int(homo_tuple))
+
+ofo_total=0
+ofo_count=0
+all_total=0
+for i,body in enumerate(n3_constit):
+    if homo_tuple in body[0:3]:
+        ofo_total+=n3_constit[i][-1]
+        ofo_count+=1
+    all_total+=n3_constit[i][-1]
+print ('Total 3-body singlet energy:',all_total,'\nOFO 3-body singlet energy:',ofo_total)
+
+tuples = (np.arange(len(e_energies[0]), 0, -1) + int(ncore)).tolist()
+pairs = combinations(tuples,2)
+triads = combinations(tuples,3)
+quads = combinations(tuples,4)
+tuple_count = len(e_energies[0])
+pair_count = int(comb(len(e_energies[0]),2))
+triad_count = int(comb(len(e_energies[0]),3))
+quad_count = int(comb(len(e_energies[0]),4))
+n1_ary = []
+#print (len(tuples),'tuples')
+for i in range(len(tuples)):
+    n1_ary.append([])
+    n1_ary[i].append(tuples[i])
+    n1_ary[i].append(e_energies[0][i])
+#print (pair_count,'pairs')
+pair_ary = []
+index = 0
+for i,j in list(pairs): 
+    pair_ary.append([])
+    pair_ary[index].append(i)
+    pair_ary[index].append(j)
+    index+=1
+
+#print('pair_corr_line:',pair_corr_line)
+pair_corr_start = pair_corr_line+2
+pair_corr_end = pair_corr_start+len(tuples)-2
+pair_corr_top = pair_corr_line+3
+pair_corr_bottom = line_total-pair_corr_top-len(tuples)
+print('tuples:',len(tuples))
+print('pair_corr_start:',pair_corr_start)
+print('pair_corr_end:',pair_corr_end)
+
+if q_flag:
+    pair_corr_ary=np.zeros((len(tuples)+1,len(tuples)+1))
+else:
+    pair_corr_ary=np.zeros((len(tuples),len(tuples)))
+with open(sys.argv[1]) as output_file:
+    for i,line in enumerate(output_file):
+        if pair_corr_start <= i <= pair_corr_end:
+            pair_split = line.split()
+            for j in range(len(pair_split)):
+                if q_flag:
+                    pair_corr_ary[i+1-pair_corr_start+1,j+1]=pair_split[j]
+                    pair_corr_ary[j+1,i-pair_corr_start+1+1]=pair_split[j]
+                else:
+                    pair_corr_ary[i-pair_corr_start+1,j]=pair_split[j]
+                    pair_corr_ary[j,i-pair_corr_start+1]=pair_split[j]
+            #print (pair_corr_ary[i-pair_corr_start])
+
+#print (pair_corr_ary)
+np.savetxt(('%s_n2.csv' % in_name),pair_corr_ary,delimiter=',',fmt='%10.8f')
+np.save(('%s_n2' % in_name),pair_corr_ary,allow_pickle=False)
+print (in_name,'n2 files created')
+
+high_count = 3
+highest_triads = np.zeros(high_count) 
+marker = 0
+n3_holder = np.zeros((len(n3_constit),1))
+#print (triad_count)
+#print (len(n3_constit))
+
+for i in range(len(n3_constit)):
+    n3_holder[i] = n3_constit[i][-1]
+
+#print (n3_holder)
+
+for i in range(high_count):  
+    max1 = 0
+    for j in range(len(n3_holder)):      
+        #n3_holder[j] = n3_constit[-1][j]
+        if abs(n3_holder[j]) > max1: 
+            max1 = float(n3_holder[j]); 
+            marker = j
+    #print (max1)
+    n3_holder[marker] = 0; 
+    #highest_triads.append(max1[0]) 
+    highest_triads[i] += max1
+    #print (highest_triads)
+      
+print('highest_triads') 
+for i in highest_triads:
+    print (i)
+  
+print ('3d triad array test:')
+if q_flag:
+    triad_corr_ary=np.zeros((len(tuples)+1,len(tuples)+1,len(tuples)+1))
+else:
+    triad_corr_ary=np.zeros((len(tuples),len(tuples),len(tuples)))
+
+print ('shape of triads:',np.shape(triad_corr_ary))
+
+print ('triads found:')
+for triad,body in enumerate(n3_constit):
+    for i,row in enumerate(range(int(homo_tuple),-1,-1)):
+        if row in ((body[0],body[1],body[2])):
+            for j,column in enumerate(range(int(homo_tuple),-1,-1)):
+                if j<i and (column in (body[0],body[1],body[2])):
+                    for k,aisle in enumerate(range(int(homo_tuple),-1,-1)):
+                        if k<j and (aisle in (body[0],body[1],body[2])):
+                            triad_corr_ary[i,j,k]+=body[-1]
+                            triad_corr_ary[i,k,j]+=body[-1]
+                            triad_corr_ary[j,i,k]+=body[-1]
+                            triad_corr_ary[j,k,i]+=body[-1]
+                            triad_corr_ary[k,i,j]+=body[-1]
+                            triad_corr_ary[k,j,i]+=body[-1]
+                            #print (i,j,k,row,column,aisle,body[-1])
+                            #print (triad_corr_ary[i,j,k])
+                            #print ('found index:',body[0],body[1],body[2],'matches',row,column,aisle)
+
+#print (triad_corr_ary)
+
+# Uncomment for printing all 2d slices of triads
+#for i,slice_2d in enumerate(triad_corr_ary):
+#    orb = homo_tuple - i
+#    #print ('value',i,'for orb',orb,'has 2d array:\n',slice_2d)
+#    np.savetxt(('%s_%s_n3.csv' % (in_name,int(orb))),slice_2d,delimiter=',',fmt='%10.8f')
+
+n3_3d_len = len(tuples)*len(tuples)*len(tuples) 
+print ('3d full length:',n3_3d_len)
+print ('n3 shape:',np.shape(triad_corr_ary))
+# uncomment these lines for Mathematica arrays
+#full_n3 = triad_corr_ary.reshape(1,int(n3_3d_len)) 
+#np.savetxt(('%s_full_n3.csv' % in_name),full_n3,delimiter=',',fmt='%10.8f')
+
+np.savetxt(('%s_n3.csv' % in_name),triad_corr_ary[0],delimiter=',',fmt='%10.8f')
+np.save(('%s_n3' % in_name),triad_corr_ary[0],allow_pickle=False)
+np.savetxt(('%s_n3_constit.csv' % in_name),n3_constit,delimiter=',',fmt='%10.8f')
+np.save(('%s_n3_constit' % in_name),n3_constit,allow_pickle=False)
+print (in_name,'n3 files created')
+
+high_count = 4
+highest_quads = np.zeros(high_count) 
+marker = 0
+n4_holder = np.zeros((len(n4_constit),1))
+print ('quad count:',quad_count)
+print ('length of n4:',len(n4_constit))
+
+for i in range(len(n4_constit)):
+    n4_holder[i] = n4_constit[i][-1]
+
+for i in range(high_count):  
+    max1 = 0
+    for j in range(len(n4_holder)):      
+        #n3_holder[j] = n3_constit[-1][j]
+        if abs(n4_holder[j]) > max1: 
+            max1 = float(n4_holder[j]); 
+            marker = j
+    #print (max1)
+    n4_holder[marker] = 0; 
+    #highest_triads.append(max1[0]) 
+    highest_quads[i] += max1
+    #print (highest_triads)
+      
+print('highest_quads') 
+for i in highest_quads:
+    print (i)
+  
+print ('4d quad array test:')
+if q_flag:
+    quad_corr_ary=np.zeros((len(tuples)+1,len(tuples)+1,len(tuples)+1,len(tuples)+1))
+else:
+    quad_corr_ary=np.zeros((len(tuples),len(tuples),len(tuples),len(tuples)))
+
+print ('shape of quads:',np.shape(quad_corr_ary))
+
+print ('quads found:')
+for quad,body in enumerate(n4_constit):
+    for i,row in enumerate(range(int(homo_tuple),-1,-1)):
+        if row in ((body[0],body[1],body[2],body[3])):
+            for j,column in enumerate(range(int(homo_tuple),-1,-1)):
+                if j<i and (column in (body[0],body[1],body[2],body[3])):
+                    for k,aisle in enumerate(range(int(homo_tuple),-1,-1)):
+                        if k<j and (aisle in (body[0],body[1],body[2],body[3])):
+                            for l,tess in enumerate(range(int(homo_tuple),-1,-1)):
+                                if l<k and (tess in (body[0],body[1],body[2],body[3])):
+                                    quad_corr_ary[i,j,k,l]+=body[-1]
+                                    quad_corr_ary[i,k,j,l]+=body[-1]
+                                    quad_corr_ary[j,i,k,l]+=body[-1]
+                                    quad_corr_ary[j,k,i,l]+=body[-1]
+                                    quad_corr_ary[k,i,j,l]+=body[-1]
+                                    quad_corr_ary[k,j,i,l]+=body[-1]
+                                    #print (i,j,k,row,column,aisle,body[-1])
+                                    #print (triad_corr_ary[i,j,k])
+                                    #print ('found index:',body[0],body[1],body[2],'matches',row,column,aisle)
+
+#print (triad_corr_ary)
+
+n4_4d_len = len(tuples)*len(tuples)*len(tuples)*len(tuples) 
+print ('4d full length:',n4_4d_len)
+print ('n4 shape:',np.shape(quad_corr_ary))
+
+#np.savetxt(('%s_n4.csv' % in_name),quad_corr_ary[0],delimiter=',',fmt='%10.8f')
+#np.save(('%s_n4' % in_name),quad_corr_ary[0],allow_pickle=False)
+np.save(('%s_n4_constit' % in_name),n4_constit,allow_pickle=False)
+print (in_name,'n4 files created')
+
+#quad_corr_ary = np.zeros((len(tuples),len(tuples)))
+#for triad,body in enumerate(n3_constit):
+#    for i,row in enumerate(range(int(homo_tuple),-1,-1)):
+#        for j,column in enumerate(range(int(homo_tuple),-1,-1)):
+#            #print('i',i,'j',j,'row',row,'column',column)
+#            if (body[0] == row and body[1] == column) or (body[1] == row and body[0] == column):
+#                #print('body[0]',int(body[0]),'body[1]',int(body[1]),'body[-1]',body[-1])
+#                #print('body',body)
+#                quad_corr_ary[i,j]+=body[-1]
+
+#print('quad_corr_ary after:\n',quad_corr_ary)
+#for i in n3_constit:
+#    print(i[-1])
+
+#np.savetxt('cfo_ary_n4.csv',quad_corr_ary,delimiter=',')
+
+
+
+
+#pair_corr_ary.append(np.loadtxt(sys.argv[1], usecols=0, skiprows=pair_corr_line+3, max_rows=len(tuples)))
+
+#pair_corr_ary.append(np.loadtxt(sys.argv[1], skiprows=pair_corr_start, max_rows=pair_corr_start))
+#pair_corr_ary.append(np.genfromtxt(StringIO(sys.argv[1]),skip_header=pair_corr_top, skip_footer=pair_corr_bottom))
+#print(np.genfromtxt(sys.argv[1],delimiter=" ",skip_header=pair_corr_top, skip_footer=pair_corr_bottom))
+
+
+#pair_corr_ary=[]
+#for i in range(len(tuples)):
+#    
+#    pair_corr_ary=
+
+
+
+#pair_corr_ary = np.tril()
+

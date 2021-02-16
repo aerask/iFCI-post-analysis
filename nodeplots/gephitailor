@@ -1,0 +1,261 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+
+"""
+Code written Dec 2020.
+Reads in node and edge files created by encxfind script and produces .csv files
+according to orbitals specified in the `orbitals` variable.
+Execute as: gephitailor ifci.out
+Output: nodes_select.csv, edges_select.csv
+"""
+
+in_name = sys.argv[1]
+if in_name.endswith('.out'):
+    in_name = in_name[:-4]
+
+#orbitals = []
+#for i,arg in enumerate(sys.argv):
+#    if i > 1:
+#        orbitals.append(int(arg))
+
+#orbitals = [21,20,18] # benzene pi space
+#orbitals = [21,20,19,18,17] # benzene pi space and two differently overlapping sigmas
+#orbitals = [21,20,18,19,17,16,15,14,13] # benzene C-C pi and sigma space
+#orbitals = [69,68,64,54] # fe por 3A2g main d orbitals and one sigN
+#orbitals = [69,68,64,54,53,52,51] # fe por all d orbitals
+#orbitals = list(range(44,70))
+#orbitals = [69,68,67,51] # fe por 3Eg main d orbitals and one sigN
+#print (orbitals)
+
+if in_name == 'a2g':
+    #orbitals = [69,68,64,54] # fe por 3A2g main d orbitals and one sigN
+    #orbitals = [69,68,64,54,53,52,51] # fe por 3A2g all d orbitals
+    orbitals = list(range(44,70))
+elif in_name == 'e3g':
+    #orbitals = [69,68,67,51] # fe por 3Eg main d orbitals and one sigN
+    #orbitals = [69,68,67,54,53,52,51] # fe por 3Eg all d orbitals
+    orbitals = list(range(44,70))
+elif in_name == 'a5g':
+    orbitals = []
+else:
+    print ("Input name doesn't match any orbital sets.")
+    exit()
+
+all_nodes = np.load((os.getcwd()+'/nodes_all_%s.npy' % in_name),allow_pickle=False)
+all_edges = np.load((os.getcwd()+'/edges_all_%s.npy' % in_name),allow_pickle=False)
+node_names = np.load((os.getcwd()+'/node_names_%s.npy' % in_name),allow_pickle=False)
+
+select_nodes = []
+select_node_names = []
+for i,node in enumerate(all_nodes):
+    include = 0
+    for pick in orbitals:
+        if pick in node[4:8]:
+            include += 1
+    if include == node[2]:
+        #print ('found one:',node[3:8])
+        select_nodes.append(node)
+        select_node_names.append(node_names[i])
+
+#for i in all_nodes:
+#    print (i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7])
+
+node_search = np.transpose(np.asarray(select_nodes))[1]
+#print ('nodes include:\n',node_search.astype(int))
+#print ('nodes names include:\n',select_node_names)
+
+n = max(np.transpose(select_nodes)[:][2])
+n_body_counts = np.transpose(select_nodes)[:][2]
+nodes_per_body = []
+for inc in range(int(n)):
+    nodes_per_body.append((inc+1 == n_body_counts).sum())
+print ('nodes per body:',nodes_per_body)
+
+select_nodes = np.insert(select_nodes,4,0,axis=1)
+for i in range(len(select_nodes)):
+    select_nodes[i][4] = -1/np.log10(np.absolute(select_nodes[i][3]))
+
+# Calculate node radial positions
+def calc_angle(bodies,index):
+    #angle = np.pi - (index*2*np.pi/bodies)
+    #angle = np.pi - (index*2*np.pi/bodies+2*np.pi/bodies)
+    #angle = index*2*np.pi/bodies
+    #angle = index*2*np.pi/bodies+2*np.pi/bodies
+    angle = index*2*np.pi/bodies+np.pi/bodies
+    #print ('bodies:',bodies,'index:',index,'angle:',angle)
+    return (angle)
+
+# Calculate node cartesian positions
+def calc_pos(r,angle):
+    x_pos = r*np.cos(angle)
+    y_pos = r*np.sin(angle)
+    #print ('r:',r,'angle:',angle,'x:',x_pos,'y:',y_pos)
+    return(x_pos,y_pos)
+
+# Insert n-index, angles, and coordinates
+select_nodes = np.insert(select_nodes,9,0,axis=1)
+select_nodes = np.insert(select_nodes,10,0,axis=1)
+select_nodes = np.insert(select_nodes,11,0,axis=1)
+select_nodes = np.insert(select_nodes,12,0,axis=1)
+old_node = select_nodes[-1]
+index = 0
+for i,node in enumerate(select_nodes):
+    if node[2] != old_node[2]: 
+        index = 0
+    #print ('current node:',node[1:4])
+    select_nodes[i][9] = index
+    bodies_in_inc = nodes_per_body[int(node[2])-1]
+    node_angle = calc_angle(bodies_in_inc,index) # bodies in inc and index
+    select_nodes[i][10] = node_angle
+    x_val,y_val = calc_pos(node[2],node_angle) # n-body (radius) and angle
+    select_nodes[i][11] = x_val
+    select_nodes[i][12] = y_val
+    index += 1
+    old_node = node
+
+## Sort nodes according to orbital
+#sorted_nodes = np.zeros((np.shape(select_nodes)[0],np.shape(select_nodes)[1]))
+#prev_end = 0
+#sorted_node_names = []
+#for count in nodes_per_body:
+#    current_n_nodes = select_nodes[prev_end:count+prev_end,:]
+#    #current_n_names = select_node_names[prev_end:count+prev_end]
+#    #sort_index = np.lexsort((current_n_nodes[:,8],current_n_nodes[:,7],current_n_nodes[:,6],current_n_nodes[:,5]))
+#    sort_index = np.lexsort((current_n_nodes[:,5],current_n_nodes[:,6],current_n_nodes[:,7],current_n_nodes[:,8]))
+#    #print ('sort index:',sort_index)
+#    #print ('current n names:',current_n_names)
+#    #sorted_node_names = current_n_names[sort_index]
+#    #print ('count:',count,'and previous count:',prev_end)
+#    #print (current_n_nodes[sort_index,5:10].astype(int))
+#    #sorted_nodes = np.append(sorted_nodes,current_n_nodes[sort_index],axis=0)
+#    print ('shape of sorted nodes:',np.shape(sorted_nodes),'shape of current_n_nodes is:',np.shape(current_n_nodes))
+#    #sorted_nodes = np.hstack((sorted_nodes,current_n_nodes[sort_index]))
+#    #sorted_nodes = select_nodes[np.argsort(select_nodes[prev_end:count+prev_end,5])]
+#    #print (sorted_nodes)
+#    #sorted_nodes.append(current_n_nodes[sort_index])
+#    #print (sorted_nodes)
+#    sorted_nodes[prev_end:count+prev_end,:] = (current_n_nodes[sort_index])[::-1]
+#    prev_end += count
+#    #np.savetxt(('sorting_count_%s.csv' % str(count)),np.asarray(sorted_nodes),delimiter=',',fmt='%10.8f')
+
+# Sort nodes according to orbital grouping
+select_nodes = np.insert(select_nodes,13,0,axis=1)
+select_nodes = np.insert(select_nodes,14,0,axis=1)
+for i,node in enumerate(select_nodes):
+    d_check = np.sum(np.ma.masked_where(node[5:9] > 60, node[5:9]).mask)
+    sig_check = np.sum(np.ma.masked_where(node[5:9] < 60, node[5:9]).mask) - (4 - node[2])
+    select_nodes[i][13] = d_check
+    select_nodes[i][14] = sig_check
+    #print ('node:',node[5:9],'d_check:',d_check,'sig_check',sig_check)
+sort_index = np.lexsort((select_nodes[:,8],select_nodes[:,7],select_nodes[:,6],select_nodes[:,5],\
+                         select_nodes[:,14],select_nodes[:,13],select_nodes[:,2]))
+sorted_nodes = select_nodes[sort_index]
+
+# Recalculate sorted n-index, angles, and coordinates
+old_node = sorted_nodes[-1]
+index = 0
+for i,node in enumerate(sorted_nodes):
+    if node[2] != old_node[2]: 
+        index = 0
+    sorted_nodes[i][9] = index
+    bodies_in_inc = nodes_per_body[int(node[2])-1]
+    node_angle = calc_angle(bodies_in_inc,index) # bodies in inc and index
+    sorted_nodes[i][10] = node_angle
+    x_val,y_val = calc_pos(node[2],node_angle) # n-body (radius) and angle
+    sorted_nodes[i][11] = x_val
+    sorted_nodes[i][12] = y_val
+    index += 1
+    old_node = node
+    
+select_edges = []
+for edge in all_edges:
+    include = 0
+    for nodeidx in node_search:
+        if nodeidx in edge[1:3]:
+            include += 1
+    if include == 2:
+        select_edges.append(edge)
+
+print ('shape of select edges:',np.shape(select_edges))
+
+for i in range(len(select_edges)):
+    select_edges[i][0] = i
+    select_edges[i][-1] = -1/np.log10(np.absolute(select_edges[i][-1]))
+
+header_node = ['id','node','n-level','energy','scaled','body1','body2','body3','body4','n-index','angle','x','y','d_count','sig_count','bodyname']
+node_file = open(('nodes_select_%s.csv' % in_name),'w')
+for i in range(len(header_node)):
+    node_file.write(header_node[i])
+    if i != len(header_node) - 1:
+        node_file.write(',')
+node_file.write('\n')
+for node,name in zip(select_nodes,select_node_names):
+    for col in node:
+        node_file.write(str(col))
+        node_file.write(',')
+    node_file.write(name)
+    node_file.write('\n')
+
+node_file = open('nodes_select_sorted.csv','w')
+for i in range(len(header_node)):
+    node_file.write(header_node[i])
+    if i != len(header_node) - 1:
+        node_file.write(',')
+node_file.write('\n')
+#for node,name in zip(sorted_nodes,sorted_node_names):
+for node in sorted_nodes:
+    for col in node:
+        node_file.write(str(col))
+        node_file.write(',')
+    node_file.write('\n')
+
+header_edge = ['id','Source','Target','n-level','Weight','Type']
+edge_file = open(('edges_select_%s.csv' % in_name),'w')
+for i in range(len(header_edge)):
+    edge_file.write(header_edge[i])
+    if i != len(header_edge) - 1:
+        edge_file.write(',')
+edge_file.write('\n')
+for edge in select_edges:
+    for i,col in enumerate(edge):
+        edge_file.write(str(col))
+        if i != len(edge) -1:
+            edge_file.write(',')
+    edge_file.write(',Undirected')
+    edge_file.write('\n')
+
+np.save((os.getcwd()+'/nodes_select_%s.npy' % in_name),select_nodes,allow_pickle=False)
+np.save((os.getcwd()+'/edges_select_%s.npy' % in_name),select_edges,allow_pickle=False)
+
+exit()
+
+
+node_file = open('nodes_select_sorted_n2.csv','w')
+for i in range(len(header_node)):
+    node_file.write(header_node[i])
+    if i != len(header_node) - 1:
+        node_file.write(',')
+node_file.write('\n')
+for node in sorted_nodes:
+    if node[2] < 3:
+        for col in node:
+            node_file.write(str(col))
+            node_file.write(',')
+        node_file.write('\n')
+
+edge_file = open('edges_select_n2.csv','w')
+for i in range(len(header_edge)):
+    edge_file.write(header_edge[i])
+    if i != len(header_edge) - 1:
+        edge_file.write(',')
+edge_file.write('\n')
+for edge in select_edges:
+    if edge[3] < 3:
+        for i,col in enumerate(edge):
+            edge_file.write(str(col))
+            if i != len(edge) -1:
+                edge_file.write(',')
+        edge_file.write('\n')
+

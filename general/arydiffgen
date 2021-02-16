@@ -1,0 +1,42 @@
+#!/usr/local/bin/python3
+import sys
+import os
+import numpy as np
+import csv
+
+ary_1 = np.load(sys.argv[1])
+ary_2 = np.load(sys.argv[2])
+
+#with open(sys.argv[1], newline='') as csvfile:
+#    ary_1 = list(csv.reader(csvfile))
+#
+#with open(sys.argv[2], newline='') as csvfile:
+#    ary_2 = list(csv.reader(csvfile))
+#
+#for i in range(len(ary_1[0])):
+#    for j in range(len(ary_1[0])):
+#        ary_1 = int(ary_1[i][j])
+
+#with open(sys.argv[1], 'r', newline='') as f:
+#    reader = csv.reader(f)
+#    rows = [[row[0], int(row[1])] for row in reader if row]
+
+#ary_1 = [int(num_string) for num_string in ary_1]
+#ary_2 = [int(num_string) for num_string in ary_2]
+
+ary_diff = np.subtract(np.array(ary_1),np.array(ary_2))
+#ary_diff = ary_2 - ary_1
+
+state_1 = sys.argv[1]
+if state_1.endswith('.npy'):
+    state_1 = state_1[:-7]
+state_2 = sys.argv[2]
+if state_2.endswith('.npy'):
+    state_2 = state_2[:-7]
+#state_1 = os.path.splitext(sys.argv[1])[0]
+#state_2 = os.path.splitext(sys.argv[2])[0]
+print ('name 1:',state_1,'  name 2:',state_2)
+
+np.savetxt(('%s-%s_n2.csv' % (state_1,state_2)),ary_diff,delimiter=',')
+#np.savetxt('test',ary_diff,delimiter=',')
+

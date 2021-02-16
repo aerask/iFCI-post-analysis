@@ -1,0 +1,303 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+
+in_name_1 = sys.argv[1]
+if in_name_1.endswith('.out'):
+    in_name_1 = in_name_1[:-4]
+in_name_2 = sys.argv[2]
+if in_name_2.endswith('.out'):
+    in_name_2 = in_name_2[:-4]
+print ('input file:',in_name_1,'and',in_name_2)
+
+state1_n2 = np.load((os.getcwd()+'/%s_n2.npy' % in_name_1),allow_pickle=False)
+state2_n2 = np.load((os.getcwd()+'/%s_n2.npy' % in_name_2),allow_pickle=False)
+state1_n3 = np.load((os.getcwd()+'/%s_n3.npy' % in_name_1),allow_pickle=False)
+state2_n3 = np.load((os.getcwd()+'/%s_n3.npy' % in_name_2),allow_pickle=False)
+n3_constit_1 = np.load((os.getcwd()+'/%s_n3_constit.npy' % in_name_1),allow_pickle=False)
+n3_constit_2 = np.load((os.getcwd()+'/%s_n3_constit.npy' % in_name_2),allow_pickle=False)
+n4_constit_1 = np.load((os.getcwd()+'/%s_n4_constit.npy' % in_name_1),allow_pickle=False)
+n4_constit_2 = np.load((os.getcwd()+'/%s_n4_constit.npy' % in_name_2),allow_pickle=False)
+
+#print (state1_n2)
+#print (state2_n2)
+#print (state1_n2)
+#print (state2_n3)
+
+#test_s1_order = np.array([1,2,3,4,5,6])
+#test_t1_order = np.array([3,1,2,4,5,6])
+test_s1_order = np.array([1,2,3,4,5,6])
+test_t1_order = np.array([1,4,2,3,5,6])
+
+#a5g_order = np.array([2, 1, 4, 3, 25, 20, 9, 23, 12, 11, 10, 19, 18, 24, 21, 22, 5, 8, 7, 6, 13, 14, 15, 17, 16, 33, 30, 28, 27, 29, 31, 26, 32, 36, 37, 34, 35, 41, 38, 42, 39, 44, 40, 45, 43])
+a5g_order = np.array([1, 2, 4, 3, 25, 20, 9, 23, 12, 11, 10, 19, 18, 24, 21, 22, 5, 8, 7, 6, 13, 14, 15, 17, 16, 33, 30, 28, 27, 29, 31, 26, 32, 36, 37, 34, 35, 41, 38, 42, 39, 44, 40, 45, 43])
+a2g_order = np.array([1, 2, 3, 18, 19, 9, 4, 20, 10, 11, 12, 21, 22, 23, 24, 25, 5, 6, 7, 8, 13, 14, 15, 16, 17, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45])
+
+homo_tuple_1=np.max(n3_constit_1)
+print ('homotuple for state 1:',int(homo_tuple_1))
+homo_tuple_2=np.max(n3_constit_2)
+print ('homotuple for state 2:',int(homo_tuple_2))
+
+def sort_by_idx_ary(order,array):
+    order_tp = order[np.newaxis].T # switch dimension of orbital order
+    print ('order size:',np.size(order))
+    print ('order:',order)
+    #print ('array:',array)
+    print ('array size:',np.size(array[0]))
+    sorted_array = np.hstack((order_tp,array)) # tack on the orbital indices
+    sorted_array = sorted_array[np.argsort(sorted_array[:,0])] # sort according to index
+    sorted_array = np.delete(sorted_array,0,1) # remove indices
+    sorted_array = np.vstack((order,sorted_array)) # tack on orbital indices again
+    sorted_array = np.transpose(sorted_array) # transpose for another sort
+    sorted_array = sorted_array[np.argsort(sorted_array[:,0])] # sort the other dimension
+    sorted_array = np.delete(sorted_array,0,1) # remove indices again
+    return (sorted_array)
+
+def sort_by_idx_ary_n3(order,array):
+    order_tp = order[np.newaxis].T # switch dimension of orbital order
+    print ('array size n3:',np.shape(array))
+    sorted_array = np.hstack((order_tp,array)) # tack on the orbital indices
+    sorted_array = sorted_array[np.argsort(sorted_array[:,0])] # sort according to index
+    sorted_array = np.delete(sorted_array,0,1) # remove indices
+    sorted_array = np.vstack((order,sorted_array)) # tack on orbital indices again
+    sorted_array = np.transpose(sorted_array) # transpose for another sort
+    sorted_array = sorted_array[np.argsort(sorted_array[:,0])] # sort the other dimension
+    sorted_array = np.delete(sorted_array,0,1) # remove indices again
+    return (sorted_array)
+
+def sort_by_idx_constit(homo,order,constit):
+    n = 0
+    if len(constit[0]) == 7: 
+        n = 3
+    if len(constit[0]) == 9: 
+        n = 4
+    #if not len(constit[0]) == 7 or 9:
+    #    print('correct length of constit not found:',len(constit[0]),', exiting')
+    #    exit()
+    order_tp = order[np.newaxis].T # switch dimension of orbital order
+    core = homo-len(order)
+    tuple_list = np.zeros(len(order))
+    for i,orb in enumerate(range(int(len(order)-1),-1,-1)):
+        tuple_list[i] = orb + core + 1
+    order_tp = np.hstack((order_tp,tuple_list[np.newaxis].T))
+    #print ('order with orb:\n',order_tp)
+    sorted_constit = np.zeros((len(constit),n+n+1)) 
+    for i,energy in enumerate(constit[:,-1]):
+        sorted_constit[i,-1] = energy
+        sorted_constit[i,n:(n+n)] = constit[i,0:n]
+        for place,orb in enumerate(sorted_constit[i,n:(n+n)]):
+            for index in order_tp:
+                if orb == index[1]:
+                    sorted_constit[i,place] += index[0]
+                    #print ('place:',place,'orb',orb,'index',index,'constit place',sorted_constit[i,place],'sorted_constit:\n',sorted_constit)
+    #print ('sorted_constit:\n',sorted_constit)
+    #sorted_constit = sorted_constit[np.argsort(sorted_constit[:,-1])] # sort according to index
+    return (sorted_constit)
+    
+
+def sort_by_energy(constit):
+    #print ('before stack:\n',constit)
+    #print ('constits:\n',np.absolute(constit[:,-1].T))
+    sorted_constit = np.hstack((constit,np.absolute(constit[:,-1])[np.newaxis].T))
+    #print ('before sort:\n',sorted_constit[:,-1])
+    #print ('before sort:\n',sorted_constit)
+    sorted_constit = np.flip(sorted_constit[np.argsort(sorted_constit[:,-1])],0)
+    #print ('after sort:\n',sorted_constit[:,-1])
+    #print ('after sort:\n',sorted_constit)
+    return (sorted_constit)
+
+def sorted_gap_calc(constit_1,constit_2):
+    n = 0
+    if len(constit_1[0]) == 7: 
+        n = 3
+    if len(constit_1[0]) == 9: 
+        n = 4
+    print ('n =',n,'because constit_1[0] =',len(constit_1[0]))
+    zero_column = np.zeros(len(constit_1))[np.newaxis].T
+    #combo_constit = np.hstack((constit_1,zero_column,zero_column,zero_column)) # include abs
+    #combo_constit = np.hstack((constit_1,zero_column,zero_column)) # don't include abs
+    combo_constit = np.zeros((len(constit_1),len(constit_1[0])*2+1))
+    print ('size of combo_constit:',len(combo_constit),len(combo_constit[0]))
+    #combo_constit[0:6] = constit_1[0:6]
+    #combo_constit[6:9] = constit_1[3:6]
+    #combo_constit[9] = constit_1[7]
+    counter = 0
+    #print ('looping through',len(combo_constit),'triads')
+    if n == 3:
+        print ('looping through %s %s triads and %s %s triads' % (in_name_1,len(constit_1),in_name_2,len(constit_2)))
+        with open(('%s-%s_n3_scan.txt' % (in_name_2,in_name_1)),'w') as f:
+            f.write('--Matches Found--\n')
+    if n == 4:
+        print ('looping through %s %s quads and %s %s quads' % (in_name_1,len(constit_1),in_name_2,len(constit_2)))
+        with open(('%s-%s_n4_scan.txt' % (in_name_2,in_name_1)),'w') as f:
+            f.write('--Matches Found--\n')
+    for i,body_1 in enumerate(constit_1):
+        for j,body_2 in enumerate(constit_2):
+            #print ('checking',body_1[0:3],'against',body_2[0:3])
+            if np.array_equal(np.sort(body_1[0:n]),np.sort(body_2[0:n])):
+                #print ('found match:',body_1[0:3],'for state 1 and',body_2[0:3],'for state 2')
+                combo_constit[counter,0:(n*2)] = body_1[0:(n*2)] # insert state 1's indices and orbs
+                combo_constit[counter,(n*4)] = body_1[-1] # insert state 1's E
+                combo_constit[counter,(n*2):(n*4)] = body_2[0:(n*2)] # insert state 2's indices and orbs
+                combo_constit[counter,(n*4+1)] = body_2[-1] # insert state 2's E
+                combo_constit[counter,-1] = body_2[-1]-body_1[-1] # insert state differnce energy
+                counter += 1
+                #combo_constit[i,9] = np.absolute(combo_constit[i,8])
+                #print ('match',counter,'found with indices',body_1[0:3])
+                with open(('%s-%s_n%s_scan.txt' % (in_name_2,in_name_1,n)),'a') as f:
+                    f.write('%s %s\n' % (counter,body_1[0:n]))
+
+    if counter != len(constit_1):
+        if n == 3:
+            print ('WARNING! Not all triads matched between states.')
+            print ('    There are',len(constit_1),'total triads but only',counter,'were found.')
+        if n == 4:
+            print ('WARNING! Not all quads matched between states.')
+            print ('    There are',len(constit_1),'total quads but only',counter,'were found.')
+    else:
+        print ('Constits total:',len(constit_1),' Constits found:',counter)
+    return (combo_constit)
+
+#print ('State 1 energies:\n',state1_n2)
+
+#print (np.shape(state1_n3))
+
+a5g_sorted_n2 = []
+if (in_name_1 == 'a5g'):
+    print ('State 1 found to be a5g')
+    a5g_order = np.delete(a5g_order,0)
+    a5g_sorted_n2 = sort_by_idx_ary(a5g_order,state1_n2)
+    np.save(('%s_sorted_n2' % in_name_1),a5g_sorted_n2,allow_pickle=False)
+    a5g_e_sorted_n3 = sort_by_energy(n3_constit_1)
+    a5g_idx_sorted_n3 = sort_by_idx_constit(homo_tuple_1,a5g_order,n3_constit_1)
+    np.save(('%s_sorted_n3' % in_name_1),a5g_idx_sorted_n3,allow_pickle=False)
+    np.savetxt(('%s_sorted_n3.csv' % in_name_1),a5g_idx_sorted_n3,delimiter=',',fmt='%10.8f')
+    a5g_e_sorted_n4 = sort_by_energy(n4_constit_1)
+    a5g_idx_sorted_n4 = sort_by_idx_constit(homo_tuple_1,a5g_order,n4_constit_1)
+    np.savetxt(('%s_sorted_n4.csv' % in_name_1),a5g_idx_sorted_n4,delimiter=',',fmt='%10.8f')
+
+a2g_sorted_n2 = []
+if (in_name_2 == 'a2g'):
+    print ('State 2 found to be a2g')
+    a2g_order = np.delete(a2g_order,0)
+    a2g_sorted_n2 = sort_by_idx_ary(a2g_order,state2_n2)
+    np.save(('%s_sorted_n2' % in_name_2),a2g_sorted_n2,allow_pickle=False)
+    a2g_e_sorted_n3 = sort_by_energy(n3_constit_2)
+    a2g_idx_sorted_n3 = sort_by_idx_constit(homo_tuple_2,a2g_order,n3_constit_2)
+    np.save(('%s_sorted_n3' % in_name_2),a2g_idx_sorted_n3,allow_pickle=False)
+    np.savetxt(('%s_sorted_n3.csv' % in_name_2),a2g_idx_sorted_n3,delimiter=',',fmt='%10.8f')
+    a2g_e_sorted_n4 = sort_by_energy(n4_constit_2)
+    a2g_idx_sorted_n4 = sort_by_idx_constit(homo_tuple_1,a2g_order,n4_constit_2)
+    np.savetxt(('%s_sorted_n4.csv' % in_name_1),a2g_idx_sorted_n4,delimiter=',',fmt='%10.8f')
+
+if (in_name_1 == 'a5g' and in_name_2 == 'a2g'):
+    state_diff_n2 = a2g_sorted_n2 - a5g_sorted_n2
+    state_diff_n2 = np.delete(state_diff_n2,0,1)
+    state_diff_n2 = np.transpose(state_diff_n2)
+    state_diff_n2 = np.delete(state_diff_n2,0,1)
+    np.savetxt(('%s_sorted_n2.csv' % in_name_1),a5g_sorted_n2,delimiter=',',fmt='%10.8f')
+    np.savetxt(('%s_sorted_n2.csv' % in_name_2),a2g_sorted_n2,delimiter=',',fmt='%10.8f')
+    np.savetxt(('%s-%s_n2.csv' % (in_name_2,in_name_1)),state_diff_n2,delimiter=',',fmt='%10.8f')
+    gap_ary_n3 = sorted_gap_calc(a5g_idx_sorted_n3,a2g_idx_sorted_n3) # uncomment for full functionality, comment to skip n3
+    abs_ordered_gap_ary_n3 = sort_by_energy(gap_ary_n3) # uncomment for full functionality, comment to skip n3
+    np.savetxt(('%s-%s_n3.csv' % (in_name_2,in_name_1)),abs_ordered_gap_ary_n3,delimiter=',',fmt='%10.8f') # uncomment for full functionality, comment to skip n3
+    np.savetxt(('%s-%s_n3_top100.csv' % (in_name_2,in_name_1)),abs_ordered_gap_ary_n3[0:100,:],delimiter=',',fmt='%10.8f') # uncomment for full functionality, comment to skip n3
+    gap_ary_n4 = sorted_gap_calc(a5g_idx_sorted_n4,a2g_idx_sorted_n4) # uncomment for full functionality, comment to skip n4
+    abs_ordered_gap_ary_n4 = sort_by_energy(gap_ary_n4) # uncomment for full functionality, comment to skip n4
+    np.savetxt(('%s-%s_n4.csv' % (in_name_2,in_name_1)),abs_ordered_gap_ary_n4,delimiter=',',fmt='%10.8f') # uncomment for full functionality, comment to skip n4
+    np.savetxt(('%s-%s_n4_top100.csv' % (in_name_2,in_name_1)),abs_ordered_gap_ary_n4[0:100,:],delimiter=',',fmt='%10.8f') # uncomment for full functionality, comment to skip n4
+    
+# ethylene test case ifs 
+if (in_name_1 == 's1'):
+    print ('State 1 found to be s1')
+    s1_sorted = sort_by_idx_ary(test_s1_order,state1_n2)
+    s1_e_sorted = sort_by_energy(n3_constit_1)
+    s1_idx_sorted = sort_by_idx_constit(homo_tuple_1,test_s1_order,n3_constit_1)
+    print ('State 1 sorted energies:\n',s1_sorted)
+
+if (in_name_2 == 't1'):
+    print ('State 2 found to be t1')
+    t1_sorted = sort_by_idx_ary(test_t1_order,state2_n2)
+    #t1_constit_sorted = sort_by_idx_constit(test_t1_order,n3_constit_2)
+    t1_e_sorted = sort_by_energy(n3_constit_2)
+    t1_idx_sorted = sort_by_idx_constit(homo_tuple_2,test_t1_order,n3_constit_2)
+    print ('State 2 sorted energies:\n',t1_sorted)
+    #print ('State 2 sorted constituents:\n',t1_constit_sorted)
+
+if (in_name_1 == 's1' and in_name_2 == 't1'):
+    gap_ary = sorted_gap_calc(s1_idx_sorted,t1_idx_sorted)
+    abs_ordered_gap_ary = sort_by_energy(gap_ary)
+    #np.savetxt(('%s-%s_n3.csv' % (in_name_2,in_name_1)),abs_ordered_gap_ary,delimiter=',',fmt='%10.8f')
+    np.savetxt(('%s-%s_n3.csv' % (in_name_2,in_name_1)),np.flip(abs_ordered_gap_ary,0),delimiter=',',fmt='%10.8f')
+    #np.savetxt(('%s-%s_n3_top100.csv' % (in_name_2,in_name_1)),abs_ordered_gap_ary,delimiter=',',fmt='%10.8f')
+
+
+
+
+exit()
+
+
+state1_n2_semisorted = np.zeros((len(state1_n2[0]),len(state1_n2[0])))
+state1_n2_sorted = np.zeros((len(state1_n2[0]),len(state1_n2[0])))
+
+for count,index in enumerate(test_s1_order):
+    state1_n2_semisorted[count] = state1_n2[index-1]
+state1_n2_semisorted = np.transpose(state1_n2_semisorted)
+for count,index in enumerate(test_s1_order):
+    state1_n2_sorted[count] = state1_n2_semisorted[index-1]
+
+state2_n2_semisorted = np.zeros((len(state2_n2[0]),len(state2_n2[0])))
+state2_n2_sorted = np.zeros((len(state2_n2[0]),len(state2_n2[0])))
+state2_n2_sorted_try2 = np.zeros((len(state1_n2[0]),len(state1_n2[0])))
+
+for count,index in enumerate(test_t1_order):
+    state2_n2_semisorted[count] = state2_n2[index-1]
+#print ('state 2 semisorted:\n',state2_n2_semisorted)
+
+#state2_n2_sorted_try2 = np.vstack((test_t1_order,state2_n2_sorted_try2))
+#print (state2_n2_sorted_try2)
+#state2_n2_sorted_try2 = np.sort(state2_n2_sorted_try2)
+#print (state2_n2_sorted_try2)
+#state2_n2_sorted_try2 = np.delete(state2_n2_sorted_try2,0,0)
+#print (state2_n2_sorted_try2)
+
+#print (test_t1_order)
+test_t1_order_tp = test_t1_order[np.newaxis].T
+s2n2_sort = np.hstack((test_t1_order_tp,state2_n2))
+#print ('first:\n',s2n2_sort)
+s2n2_sort = s2n2_sort[np.argsort(s2n2_sort[:,0])]
+#print ('second:\n',s2n2_sort)
+s2n2_sort = np.delete(s2n2_sort,0,1)
+#print ('third:\n',s2n2_sort)
+s2n2_sort = np.vstack((test_t1_order,s2n2_sort))
+#print ('fourth:\n',s2n2_sort)
+s2n2_sort = np.transpose(s2n2_sort)
+#print ('fifth:\n',s2n2_sort)
+s2n2_sort = s2n2_sort[np.argsort(s2n2_sort[:,0])]
+#print ('sixth:\n',s2n2_sort)
+s2n2_sort = np.delete(s2n2_sort,0,1)
+#print ('seventh:\n',s2n2_sort)
+
+#state2_n2_semisorted = np.transpose(state2_n2_semisorted)
+#print ('state 2 semisorted transpose:\n',state2_n2_semisorted)
+#for count,index in enumerate(test_t1_order):
+#    state2_n2_sorted[count] = state2_n2_semisorted[index-1]
+
+print ('state 1 sorted:')
+for i in range(len(state1_n2_sorted[0])):
+    print (state1_n2_sorted[i])
+print ('state 2 sorted:')
+for i in range(len(state2_n2_sorted[0])):
+    print (s2n2_sort[i])
+diff = s2n2_sort - state1_n2_sorted
+print ('diff:')
+for i in range(len(diff[0])):
+    print (diff[i])
+
+
+#stacked = np.vstack((state1_n2,test_s1_order))
+#stacked = np.hstack((stacked,np.transpose(test_s1_order)))
+#print (stacked)
+
+

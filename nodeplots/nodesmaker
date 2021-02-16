@@ -1,0 +1,406 @@
+#!/opt/anaconda3/bin/python
+import sys
+import os
+import numpy as np
+from scipy.special import comb
+from itertools import combinations
+
+"""
+Code written Jan 2021.
+Reads iFCI output and produces files for constituents of each n-body expansion.
+Output: .txt for each n-body expansion, .csv for nodes and edges for each
+n-body expansion, and .npy for all_nodes and all_edges to be used for 
+gephitailor.
+Execute as: nodesmaker ifci.out
+Note: functions as different application of encxfind
+"""
+
+n=0
+homo=0
+e_ref=0
+e_hf=0
+quin=0
+e_prestart=[]
+e_start=[]
+e_end=[]
+e_energies=[]
+e_totals=[]
+n_wise_terms=[]
+n_wise_energies=[]
+n_wise_totals=[]
+constit_start=[]
+constit_end=[]
+constit_count=[]
+n3_constit=[]
+n4_constit=[]
+n1_totals=[]
+n2_totals=[]
+n3_totals=[]
+n4_totals=[]
+
+in_name = sys.argv[1]
+if in_name.endswith('.out'):
+    in_name = in_name[:-4]
+
+with open(sys.argv[1]) as output_file:
+    for i,line in enumerate(output_file):
+        if ('IFCI_TUPLES') in line:
+            nlevel_split = line.split()
+            n = int(nlevel_split[1])
+        if ('IFCI_QUINTETS') in line:
+            quin_split = line.split()
+            quin = int(quin_split[1])
+        if ('There are       ') in line:
+            tuple_split = line.split()
+            homo = int(tuple_split[2])
+        if ('Now Correlate') in line:
+            n_wise_terms.append(int(line.split()[4]))
+        if ('now printing pairwise constituents') in line:
+            constit_start.append(i)
+        for inc in range(1,n+1):
+            if ('E%ix:' % inc) in line:
+                e_prestart.append(i)
+            if ('E%icx:' % inc) in line:
+                e_start.append(i)
+            if ('E%icxt:' % inc) in line:
+                e_end.append(i)
+        #        next_line = True
+            if ('E%i total E' % inc) in line:
+                e_split = line.split()
+                n_wise_energies.append(float(e_split[3]))
+        if ('Eref(CAS-CI)') in line:
+            e_ref_split = line.split()
+            e_ref = float(e_ref_split[1])
+        if ('Ehf0:') in line:
+            e_hf_split = line.split()
+            e_hf = float(e_hf_split[3])
+
+for i in range(n-2):
+    constit_end.append(constit_start[i] + e_end[i+2] - e_start[i+2])
+    constit_count.append(e_end[i+2] - e_start[i+2] - 1)
+
+# Put energies in array
+for inc in range(1,n+1):
+    e_energies.append(np.loadtxt(sys.argv[1],\
+      usecols=-1,skiprows=e_start[inc-1]+1,\
+      max_rows=e_end[inc-1]-(e_start[inc-1]+1)))
+
+# Put total energies in array
+e_corrs = []
+for inc in range(1,n+1):
+    #print ('currently in n =',inc)
+    e_totals.append([])
+    e_corrs.append([])
+    enx = np.loadtxt(sys.argv[1],skiprows=e_prestart[inc-1]+1,max_rows=e_start[inc-1]-(e_prestart[inc-1]+1))
+    for j,body in enumerate(enx):
+        if body[-1] == 0: # For when the energy converges before the third iteration
+            body_energy = body[-2]
+        else:
+            body_energy = body[-1]
+        #print ('body energy:',body_energy)
+        e_totals[inc-1].append(body_energy)
+        e_corrs[inc-1].append(body_energy-e_hf)
+    #print ('here is e_totals for n =',n,'\n',e_totals[inc-1],'\n')
+    #print ('here is e_corrs for n =',n,'\n',e_corrs[inc-1],'\n')
+
+for inc in range(len(e_energies)):
+    n_wise_totals.append(np.sum(e_energies[inc]))
+
+if quin != 0:
+    homo -= 1
+    print ('State detected to be a quintet, homo edited to be',homo)
+
+core = homo - len(e_energies[0])
+active = len(e_energies[0])
+print ('n = %i, HOMO = %i, core = %i, active = %i' % (n,homo,core,active))
+pairs = combinations(range(active),2)
+pair_count = int(comb(len(e_energies[0]),2))
+#print (pair_count)
+pair_ary = []
+index = 0
+for i,j in list(pairs): 
+    pair_ary.append([])
+    pair_ary[index].append(i)
+    pair_ary[index].append(j)
+    index+=1
+#for i in reversed(range(len(pair_ary))):
+#    print (pair_ary[i][0]+core+1,pair_ary[i][1]+core+1)
+
+# Set energies that are zeros to really small
+for i in range(len(e_energies)):
+    e_energies[i] = np.where((\
+    abs(e_energies[i]) > 1e-9), e_energies[i], -1e-9)
+e_energies = np.asarray(e_energies)
+
+# Put pairwise constituents into array
+if n >= 3:
+    n3_constit.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,4,5,6,-1),\
+      skiprows=constit_start[0]+1, max_rows=constit_count[0]))
+    n3_constit = np.asarray(n3_constit).reshape((constit_count[0],7))
+if n >= 4:
+    n4_constit.append(np.loadtxt(sys.argv[1], usecols=(0,1,2,3,5,6,7,8,-1),\
+      skiprows=constit_start[1]+1, max_rows=constit_count[1]))
+    n4_constit = np.asarray(n4_constit).reshape((constit_count[1],9))
+
+# Print body quantities found
+print ('--Increment-Wise Bodies--')
+for inc in range(n):
+    print ('   n = %i has %i' % (inc+1,len(e_energies[inc])))
+if n == 3:
+    print (' Grand totals:\n   %i pairs, %i triads' % \
+      (n_wise_terms[0],n_wise_terms[1]))
+elif n == 4:
+    print (' Grand totals:\n   %i pairs, %i triads, %i quads' % \
+      (n_wise_terms[0],n_wise_terms[1],n_wise_terms[2]))
+
+orbidx=[]
+for i in reversed(range(active)):
+    orbidx.append(i+core+1)
+
+n2_constit = []
+# Put energies from array in text file
+for inc in range(n):
+    N = inc+1
+    with open('E%scx_%s.txt' % (str(N),in_name),'w') as f:
+        f.write('Increment %s\n' % N)
+        if N==1:
+            for b in range(active):
+                f.write('%s %s\n' % (orbidx[b],e_energies[inc][b]))
+        elif N==2:
+            counter = 0
+            for i in range(active):
+                for j in range(i):
+                    n2_constit.append([])
+                    n2_constit[counter].append(orbidx[i])
+                    n2_constit[counter].append(orbidx[j])
+                    n2_constit[counter].append(e_energies[inc][counter])
+                    f.write('%s %s %s\n' % \
+                      (n2_constit[counter][0],n2_constit[counter][1],n2_constit[counter][2]))
+                    #f.write('%s %s %s\n' % \
+                    #  (orbidx[i],orbidx[j],e_energies[inc][counter]))
+                    counter += 1
+        elif N==3:
+            for i in range(len(n3_constit)):
+                f.write('%s ' % int(n3_constit[i][0]))
+                f.write('%s ' % int(n3_constit[i][1]))
+                f.write('%s ' % int(n3_constit[i][2]))
+                f.write('%s\n' % n3_constit[i][-1])
+        elif N==4:
+            for i in range(len(n4_constit)):
+                f.write('%s ' % int(n4_constit[i][0]))
+                f.write('%s ' % int(n4_constit[i][1]))
+                f.write('%s ' % int(n4_constit[i][2]))
+                f.write('%s ' % int(n4_constit[i][3]))
+                f.write('%s\n' % n4_constit[i][-1])
+
+# Set up nodes and edges
+n1_nodes = []
+n2_nodes = []
+n3_nodes = []
+n4_nodes = []
+n2_edges = []
+n3_edges = []
+n4_edges = []
+node_tally = 0
+edge_tally = 0
+for inc in range(n):
+    N = inc+1
+    node_total = 0
+    if N==1:
+        for i,energy in enumerate(e_corrs[inc]):
+            n1_nodes.append([])
+            n1_nodes[i].append(i)                         # index of node
+            n1_nodes[i].append(orbidx[i])                 # orbital
+            #n1_nodes[i].append(energy)                    # energy of n=1 term
+            n1_nodes[i].append(e_energies[inc][i])        # eps of n=1 term
+            node_count = i
+        node_tally += len(e_energies[inc])
+        print ('node tally in',inc+1,':',node_tally)
+        #np.savetxt(('nodes_E%scx.csv' % str(N)),np.asarray(n1_nodes),delimiter=',',fmt='%10.8f')
+    elif N==2:
+        for i,energy in enumerate(e_corrs[inc]):
+            n2_nodes.append([])
+            n2_nodes[i].append(node_tally+i)              # index of node
+            #n2_nodes[i].append(homo-n2_constit[i][1])
+            #n2_nodes[i].append(homo-n2_constit[i][0])
+            n2_nodes[i].append(n2_constit[i][1])          # higher orbital
+            n2_nodes[i].append(n2_constit[i][0])          # lower orbital
+            #n2_nodes[i].append(energy)                    # energy of n=2 term
+            n2_nodes[i].append(n2_constit[i][-1])         # eps of n=2 term
+            node_count = i
+        node_tally += len(e_energies[inc])
+        print ('node tally in',inc+1,':',node_tally)
+        #np.savetxt(('nodes_E%scx.csv' % str(N)),np.asarray(n2_nodes),delimiter=',',fmt='%10.8f')
+        edge = 0
+        for ij,body in enumerate(n2_constit):
+            for orb in body[0:2]:
+                n1_node = homo - orb
+                n2_edges.append([])
+                n2_edges[edge].append(edge)               # index of edge
+                n2_edges[edge].append(ij+len(n1_nodes))   # n=2 node
+                n2_edges[edge].append(n1_node)            # n=1 node
+                n2_edges[edge].append(body[-1])           # eps of n=2 term
+                #n2_edges[edge].append(body[1])            # higher orbital
+                #n2_edges[edge].append(body[0])            # lower orbital
+                edge += 1
+        edge_tally += len(n2_edges)
+        print ('edge tally in',inc+1,':',edge_tally)
+        #np.savetxt(('edges_E%scx.csv' % str(N)),np.asarray(n2_edges),delimiter=',',fmt='%10.8f')
+    elif N==3:
+        for i,energy in enumerate(e_corrs[inc]):
+            n3_nodes.append([])
+            n3_nodes[i].append(node_tally+i)              # index of node (starts at 0)
+            n3_nodes[i].append(n3_constit[i][2])          # higest orbital
+            n3_nodes[i].append(n3_constit[i][1])          # middle orbital
+            n3_nodes[i].append(n3_constit[i][0])          # lowest orbital
+            #n3_nodes[i].append(energy)                    # energy of n=3 term
+            n3_nodes[i].append(n3_constit[i][-1])         # eps of n=3 term
+            node_count = i
+        node_tally += len(e_energies[inc])
+        print ('node tally in',inc+1,':',node_tally)
+        #np.savetxt(('nodes_E%scx.csv' % str(N)),np.asarray(n3_nodes),delimiter=',',fmt='%10.8f')
+        edge = 0
+        for ijk,body in enumerate(n3_constit):
+            for ij,n2_node in enumerate(n2_nodes):
+                if set(n2_node[1:3]).issubset(set(body[0:3])):
+                    #print ('found match in body',body[0:3],'matching node',n2_node)
+                    n3_edges.append([])
+                    n3_edges[edge].append(edge+edge_tally) # index of edge
+                    n3_edges[edge].append(ijk+len(n1_nodes)+len(n2_nodes)) # n=3 node
+                    n3_edges[edge].append(n2_node[0])     # index of n=2 node
+                    n3_edges[edge].append(body[-1])       # eps of n=3 term
+                    #print (n3_edges[edge])
+                    edge += 1
+        edge_tally += len(n3_edges)
+        print ('edge tally in',inc+1,':',edge_tally)
+        #np.savetxt(('edges_E%scx.csv' % str(N)),np.asarray(n3_edges),delimiter=',',fmt='%10.8f')
+    elif N==4:
+        for i,energy in enumerate(e_corrs[inc]):
+            n4_nodes.append([])
+            n4_nodes[i].append(node_tally+i)
+            n4_nodes[i].append(n4_constit[i][3])
+            n4_nodes[i].append(n4_constit[i][2])
+            n4_nodes[i].append(n4_constit[i][1])
+            n4_nodes[i].append(n4_constit[i][0])
+            #n4_nodes[i].append(energy)
+            n4_nodes[i].append(n4_constit[i][-1])         # eps of n=3 term
+            node_count = i
+        node_tally += len(e_energies[inc])
+        print ('node tally in',inc+1,':',node_tally)
+        #np.savetxt(('nodes_E%scx.csv' % str(N)),np.asarray(n4_nodes),delimiter=',',fmt='%10.8f')
+        edge = 0
+        for ijkl,body in enumerate(n4_constit):
+            for ijk,n3_node in enumerate(n3_nodes):
+                if set(n3_node[1:4]).issubset(set(body[0:4])):
+                    #print ('found match in body',body[0:3],'matching node',n2_node)
+                    n4_edges.append([])
+                    n4_edges[edge].append(edge+edge_tally) # index of edge
+                    n4_edges[edge].append(ijkl+len(n1_nodes)+len(n2_nodes)+len(n3_nodes)) # n=4 node
+                    n4_edges[edge].append(n3_node[0])     # index of n=3 node
+                    n4_edges[edge].append(body[-1])       # eps of n=4 term
+                    #print (n3_edges[edge])
+                    edge += 1
+        edge_tally += len(n4_edges)
+        print ('edge tally in',inc+1,':',edge_tally)
+        #np.savetxt(('edges_E%scx.csv' % str(N)),np.asarray(n4_edges),delimiter=',',fmt='%10.8f')
+
+all_nodes = []
+
+n1_nodes = np.asarray(n1_nodes)[:,[0,2,1]]
+n1_nodes = np.insert(n1_nodes,3,0,axis=1)
+n1_nodes = np.insert(n1_nodes,3,0,axis=1)
+n1_nodes = np.insert(n1_nodes,3,0,axis=1)
+n1_nodes = np.insert(n1_nodes,1,1,axis=1)
+n2_nodes = np.asarray(n2_nodes)[:,[0,3,1,2]]
+n2_nodes = np.insert(n2_nodes,4,0,axis=1)
+n2_nodes = np.insert(n2_nodes,4,0,axis=1)
+n2_nodes = np.insert(n2_nodes,1,2,axis=1)
+n3_nodes = np.asarray(n3_nodes)[:,[0,4,1,2,3]]
+n3_nodes = np.insert(n3_nodes,5,0,axis=1)
+n3_nodes = np.insert(n3_nodes,1,3,axis=1)
+n4_nodes = np.asarray(n4_nodes)[:,[0,5,1,2,3,4]]
+n4_nodes = np.insert(n4_nodes,1,4,axis=1)
+
+all_nodes = np.concatenate((n1_nodes,n2_nodes,n3_nodes,n4_nodes),0)
+all_nodes = np.insert(all_nodes,0,0,axis=1)
+#all_nodes = np.absolute(all_nodes)
+node_names = []
+for i in range(len(all_nodes)):
+    n_level = 1
+    all_nodes[i][0] = i
+    body_name = str(int(all_nodes[i][4]))
+    for body in list(all_nodes[i][5:8]):
+        if body > 0:
+            n_level += 1
+            body_name = body_name + "." + str(int(body))
+    body_name = body_name + ".n" + str(n_level)
+    node_names.append(body_name)
+    #print (body_name)
+    #all_nodes[i] = np.append(all_nodes[i],body_name)
+#print (all_nodes)
+#print (node_names[0:6],node_names[-7:-1])
+
+#header_node = []
+#header_node.append(['id','node','n-level','energy','body1','body2','body3','body4'])
+#with open('nodes_all.csv','w') as node_file:
+#    np.savetxt(node_file,np.asarray(header_node),delimiter=',',fmt='%s')
+#with open('nodes_all.csv','ab') as node_file:
+#    np.savetxt(node_file,all_nodes,delimiter=',',fmt='%10.8f')
+
+    #np.savetxt(node_file, list(zip(all_nodes,node_names)),fmt='%s')
+#    np.savetxt(node_file, list(zip(all_nodes,node_names)),fmt=[['%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f'],'%s'])
+#    for node,name in list(zip(all_nodes,node_names)):
+#        #np.savetxt(node_file,(node,name),delimiter=',',fmt=['%10.8f','%s'])
+#        np.savetxt(node_file,(node,name),delimiter=',',fmt=[['%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f'],'%s'])
+
+header_node = ['id','node','n-level','energy','body1','body2','body3','body4','bodyname']
+node_file = open('nodes_all_%s.csv' % in_name,'w')
+for i in range(len(header_node)):
+    node_file.write(header_node[i])
+    if i != len(header_node) - 1:
+        node_file.write(',')
+node_file.write('\n')
+for node,name in zip(all_nodes,node_names):
+    for col in node:
+        node_file.write(str(col))
+        node_file.write(',')
+    node_file.write(name)
+    node_file.write('\n')
+
+all_edges = []
+n2_edges = np.insert(n2_edges,3,2,axis=1)
+n3_edges = np.insert(n3_edges,3,3,axis=1)
+n4_edges = np.insert(n4_edges,3,4,axis=1)
+all_edges = np.concatenate((n2_edges,n3_edges,n4_edges),0)
+#for i in range(len(all_edges)):
+#    all_edges[i][0] = i
+#all_edges = np.absolute(all_edges)
+
+#header_edge = []
+#header_edge.append(['id','Source','Target','n-level','Weight'])
+#with open('edges_all.csv','w') as node_file:
+#    np.savetxt(node_file,np.asarray(header_edge),delimiter=',',fmt='%s')
+#with open('edges_all.csv','ab') as node_file:
+#    np.savetxt(node_file,np.absolute(all_edges),delimiter=',',fmt='%10.8f')
+
+header_edge = ['id','Source','Target','n-level','Weight']
+edge_file = open('edges_all_%s.csv' % in_name,'w')
+for i in range(len(header_edge)):
+    edge_file.write(header_edge[i])
+    if i != len(header_edge) - 1:
+        edge_file.write(',')
+edge_file.write('\n')
+for edge in all_edges:
+    for i,col in enumerate(edge):
+        edge_file.write(str(col))
+        if i != len(edge) -1:
+            edge_file.write(',')
+    edge_file.write('\n')
+
+print ('Reference E:',e_ref,'Ha')
+print ('Original HF E:',e_hf,'Ha')
+
+np.save((os.getcwd()+'/nodes_all_%s.npy' % in_name),all_nodes,allow_pickle=False)
+np.save((os.getcwd()+'/edges_all_%s.npy' % in_name),all_edges,allow_pickle=False)
+np.save((os.getcwd()+'/node_names_%s.npy' % in_name),node_names,allow_pickle=False)
+
