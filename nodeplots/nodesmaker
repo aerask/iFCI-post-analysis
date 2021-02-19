@@ -8,10 +8,12 @@ from itertools import combinations
 """
 Code written Jan 2021.
 Reads iFCI output and produces files for constituents of each n-body expansion.
-Output: .txt for each n-body expansion, .csv for nodes and edges for each
-n-body expansion, and .npy for all_nodes and all_edges to be used for 
-gephitailor.
 Execute as: nodesmaker ifci.out
+Output:
+- .txt for each n-body expansion
+- .csv for nodes and edges for each n-body expansion
+- .npy for all_nodes and all_edges to be used for gephitailor
+- .npy for node names; separate file to maintain array type consistency
 Note: functions as different application of encxfind
 """
 
@@ -44,34 +46,33 @@ if in_name.endswith('.out'):
 
 with open(sys.argv[1]) as output_file:
     for i,line in enumerate(output_file):
-        if ('IFCI_TUPLES') in line:
+        if ('IFCI_TUPLES') in line:       # Increment solved by iFCI
             nlevel_split = line.split()
             n = int(nlevel_split[1])
-        if ('IFCI_QUINTETS') in line:
+        if ('IFCI_QUINTETS') in line:     # Check for if it's a quintet job
             quin_split = line.split()
             quin = int(quin_split[1])
-        if ('There are       ') in line:
+        if ('There are       ') in line:  # Number of occ orbitals
             tuple_split = line.split()
             homo = int(tuple_split[2])
-        if ('Now Correlate') in line:
+        if ('Now Correlate') in line:     # How many bodies per increment
             n_wise_terms.append(int(line.split()[4]))
-        if ('now printing pairwise constituents') in line:
+        if ('now printing pairwise constituents') in line: # Find n>=3 printout
             constit_start.append(i)
         for inc in range(1,n+1):
-            if ('E%ix:' % inc) in line:
+            if ('E%ix:' % inc) in line:   # Beginning of total body energies
                 e_prestart.append(i)
-            if ('E%icx:' % inc) in line:
+            if ('E%icx:' % inc) in line:  # Beginning of energies
                 e_start.append(i)
-            if ('E%icxt:' % inc) in line:
+            if ('E%icxt:' % inc) in line: # End of energies
                 e_end.append(i)
-        #        next_line = True
-            if ('E%i total E' % inc) in line:
+            if ('E%i total E' % inc) in line: # Total increment energies
                 e_split = line.split()
                 n_wise_energies.append(float(e_split[3]))
-        if ('Eref(CAS-CI)') in line:
+        if ('Eref(CAS-CI)') in line:      # Reference energy
             e_ref_split = line.split()
             e_ref = float(e_ref_split[1])
-        if ('Ehf0:') in line:
+        if ('Ehf0:') in line:             # HF reference energy
             e_hf_split = line.split()
             e_hf = float(e_hf_split[3])
 
@@ -88,7 +89,6 @@ for inc in range(1,n+1):
 # Put total energies in array
 e_corrs = []
 for inc in range(1,n+1):
-    #print ('currently in n =',inc)
     e_totals.append([])
     e_corrs.append([])
     enx = np.loadtxt(sys.argv[1],skiprows=e_prestart[inc-1]+1,max_rows=e_start[inc-1]-(e_prestart[inc-1]+1))
@@ -97,11 +97,8 @@ for inc in range(1,n+1):
             body_energy = body[-2]
         else:
             body_energy = body[-1]
-        #print ('body energy:',body_energy)
         e_totals[inc-1].append(body_energy)
         e_corrs[inc-1].append(body_energy-e_hf)
-    #print ('here is e_totals for n =',n,'\n',e_totals[inc-1],'\n')
-    #print ('here is e_corrs for n =',n,'\n',e_corrs[inc-1],'\n')
 
 for inc in range(len(e_energies)):
     n_wise_totals.append(np.sum(e_energies[inc]))
@@ -115,7 +112,6 @@ active = len(e_energies[0])
 print ('n = %i, HOMO = %i, core = %i, active = %i' % (n,homo,core,active))
 pairs = combinations(range(active),2)
 pair_count = int(comb(len(e_energies[0]),2))
-#print (pair_count)
 pair_ary = []
 index = 0
 for i,j in list(pairs): 
@@ -335,23 +331,6 @@ for i in range(len(all_nodes)):
             body_name = body_name + "." + str(int(body))
     body_name = body_name + ".n" + str(n_level)
     node_names.append(body_name)
-    #print (body_name)
-    #all_nodes[i] = np.append(all_nodes[i],body_name)
-#print (all_nodes)
-#print (node_names[0:6],node_names[-7:-1])
-
-#header_node = []
-#header_node.append(['id','node','n-level','energy','body1','body2','body3','body4'])
-#with open('nodes_all.csv','w') as node_file:
-#    np.savetxt(node_file,np.asarray(header_node),delimiter=',',fmt='%s')
-#with open('nodes_all.csv','ab') as node_file:
-#    np.savetxt(node_file,all_nodes,delimiter=',',fmt='%10.8f')
-
-    #np.savetxt(node_file, list(zip(all_nodes,node_names)),fmt='%s')
-#    np.savetxt(node_file, list(zip(all_nodes,node_names)),fmt=[['%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f'],'%s'])
-#    for node,name in list(zip(all_nodes,node_names)):
-#        #np.savetxt(node_file,(node,name),delimiter=',',fmt=['%10.8f','%s'])
-#        np.savetxt(node_file,(node,name),delimiter=',',fmt=[['%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f','%10.8f'],'%s'])
 
 header_node = ['id','node','n-level','energy','body1','body2','body3','body4','bodyname']
 node_file = open('nodes_all_%s.csv' % in_name,'w')
@@ -372,16 +351,6 @@ n2_edges = np.insert(n2_edges,3,2,axis=1)
 n3_edges = np.insert(n3_edges,3,3,axis=1)
 n4_edges = np.insert(n4_edges,3,4,axis=1)
 all_edges = np.concatenate((n2_edges,n3_edges,n4_edges),0)
-#for i in range(len(all_edges)):
-#    all_edges[i][0] = i
-#all_edges = np.absolute(all_edges)
-
-#header_edge = []
-#header_edge.append(['id','Source','Target','n-level','Weight'])
-#with open('edges_all.csv','w') as node_file:
-#    np.savetxt(node_file,np.asarray(header_edge),delimiter=',',fmt='%s')
-#with open('edges_all.csv','ab') as node_file:
-#    np.savetxt(node_file,np.absolute(all_edges),delimiter=',',fmt='%10.8f')
 
 header_edge = ['id','Source','Target','n-level','Weight']
 edge_file = open('edges_all_%s.csv' % in_name,'w')
