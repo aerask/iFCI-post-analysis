@@ -3,6 +3,19 @@ import sys
 import os
 import numpy as np
 
+"""
+Code written Jan 2021.
+Reads nodes_select and edges_select from two separate iFCI output files and 
+sorts them according to a pre-determined index. This order must be input or
+pre-set by the user according to matching orbitals between states. Then,
+differences between energies of bodies with matching orbitals are cataloged. 
+Execute as: sortnodes state1_iFCI.out state2_iFCI.out
+Output:
+- .csv for nodes_indexed: sorted according to index
+- .csv for nodes_diff and edges_diff for each expansion of n>1
+"""
+
+
 in_name_1 = sys.argv[1]
 if in_name_1.endswith('.out'):
     in_name_1 = in_name_1[:-4]
@@ -20,17 +33,12 @@ a5g_order = np.array([1, 2, 4, 3, 25, 20, 9, 23, 12, 11, 10, 19, 18, 24, 21, 22,
 a2g_order = np.array([1, 2, 3, 18, 19, 9, 4, 20, 10, 11, 12, 21, 22, 23, 24, 25, 5, 6, 7, 8, 13, 14, 15, 16, 17, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45])
 e3g_order = np.array([1, 2, 3, 4, 18, 24, 10, 25, 9, 12, 11, 22, 23, 19, 21, 20, 8, 7, 6, 5, 13, 16, 17, 15, 14, 26, 30, 31, 28, 27, 29, 33, 32, 37, 34, 35, 36, 41, 43, 40, 38, 39, 45, 42, 44]) # Note: switched 1 and 3
 
-homo_tuple_1 = 69
-homo_tuple_2 = 69
-#homo_tuple_1=np.max(select_nodes_1[:,5])
+#homo_tuple_1 = 69
+#homo_tuple_2 = 69
+homo_tuple_1=np.max(select_nodes_1[:,5])
 print ('homotuple for state 1:',int(homo_tuple_1))
-#homo_tuple_2=np.max(select_nodes_2[:,5])
+homo_tuple_2=np.max(select_nodes_2[:,5])
 print ('homotuple for state 2:',int(homo_tuple_2))
-
-print ('shape of nodes 1:',np.shape(select_nodes_1))
-#print ('shape of nodes 2:',np.shape(select_nodes_2))
-print ('shape of edges 1:',np.shape(select_edges_1))
-#print ('shape of edges 2:',np.shape(select_edges_2))
 
 n = max(select_nodes_1[:,2])
 print ('n-level is',int(n))
@@ -58,25 +66,16 @@ def idx_link(order,nodes,homo):
             for j,index in enumerate(order):
                 if node[inc+5] == (homo-j+1):
                     indexed_ary[i,inc] = index
-                    #print ('node:',node[inc+5],'homo-j+1:',homo-j+1,'index:',index,'ary:',indexed_ary[i,inc])
-    #print (indexed_ary)
     return (indexed_ary)
 
 def energy_diff(nodes_a,nodes_b):
     nodes_diff = []
     count = 0
-    #n_body_counts = np.transpose(nodes_a)[:][2]
-    #nodes_per_body = []
-    #for inc in range(int(n)):
-    #    nodes_per_body.append((inc+1 == n_body_counts).sum())
-    #print ('nodes per body:',nodes_per_body)
     for a in nodes_a:
         for b in nodes_b:
             if all(np.sort(a[15:19]) == np.sort(b[15:19])):
-                #print (a[15:19],b[15:19])
                 nodes_diff.append([])
                 diff_energy = a[3] - b[3]
-                #print (diff_energy,scaler(diff_energy))
                 diff_scaled = a[4] - b[4]
                 nodes_diff[count].append(float(count)) # node id
                 nodes_diff[count].append(a[1])  # original node id for state 1
@@ -95,13 +94,6 @@ def energy_diff(nodes_a,nodes_b):
                 nodes_diff[count].append(abs(diff_energy))      # absolute of state 1 - state 2 energy
                 nodes_diff[count].append(diff_scaled)           # scaled state 1 - scaled state 2
                 nodes_diff[count].append(scaler(diff_energy))   # scaled (state 1 - state 2)
-
-                #bodies_in_inc = nodes_per_body[int(a[2])-1]
-                #node_angle = calc_angle(bodies_in_inc,nodes_diff[count][4])
-                ##print ('n:',a[2],'count',count,'bodies in inc:',bodies_in_inc,'angle:',np.degrees(node_angle))
-                #x_val,y_val = calc_pos(a[2],node_angle) # n-body (radius) and angle
-                #nodes_diff[count].append(x_val)
-                #nodes_diff[count].append(y_val)
                 count += 1
     return (nodes_diff)
 
@@ -114,7 +106,6 @@ def resort_diff_nodes(nodes_diff):
         check_ary.append([])
         check_ary[i].append(d_check)
         check_ary[i].append(sig_check)
-        #print ('node:',node[5:9],'d_check:',d_check,'sig_check',sig_check)
     nodes_diff = np.hstack((nodes_diff,check_ary))
     sort_index = np.lexsort((nodes_diff[:,8],nodes_diff[:,7],nodes_diff[:,6],nodes_diff[:,5],\
                          nodes_diff[:,18],nodes_diff[:,17],nodes_diff[:,3]))
@@ -131,7 +122,6 @@ def resort_diff_nodes(nodes_diff):
     for i,node in enumerate(nodes_diff):
         bodies_in_inc = nodes_per_body[int(node[3])-1]
         node_angle = calc_angle(bodies_in_inc,nodes_diff[count][4])
-        #print ('n:',node[3],'count',count,'bodies in inc:',bodies_in_inc,'angle:',np.degrees(node_angle))
         x_val,y_val = calc_pos(node[3],node_angle) # n-body (radius) and angle
         coordinates.append([])
         coordinates[i].append(x_val)
@@ -148,7 +138,6 @@ def make_diff_edges(nodes_diff,edges_a,edges_b):
     nodes_per_body = []
     for inc in range(int(n)):
         nodes_per_body.append((inc+1 == n_body_counts).sum())
-    #print ('nodes per body:',nodes_per_body)
 
     edges = 0
     for node in nodes_diff:
@@ -159,7 +148,6 @@ def make_diff_edges(nodes_diff,edges_a,edges_b):
                 node_check.append(0)
                 contained = all(elem in node_check for elem in prev_n_node[5:9])
                 if prev_n_node[3] == (node[3]-1) and contained:
-                    #print (prev_n_node[5:9],node_check,contained)
                     edges_diff.append([])
                     edges_diff[edges].append(edges)
                     edges_diff[edges].append(node[0])
@@ -171,8 +159,6 @@ def make_diff_edges(nodes_diff,edges_a,edges_b):
                     #edges_diff[edges].append(node[16])  # insert scaled
                     edges += 1
 
-    #for edge in edges_diff:
-    #    print (edge)
     return (edges_diff)
 
 # Generate index arrays
@@ -183,27 +169,14 @@ print ('shape of indexed 1:',np.shape(indexed_1))
 # Stack index arrays with nodes
 nodes_indexed_1 = np.hstack((select_nodes_1,indexed_1))
 nodes_indexed_2 = np.hstack((select_nodes_2,indexed_2))
-print ('shape of nodes indexed 1:',np.shape(nodes_indexed_1))
-#print ('shape of nodes indexed 2:',np.shape(nodes_indexed_2))
 
 # Calculate the spin gap per node/body
 diff_nodes = energy_diff(nodes_indexed_1,nodes_indexed_2)
 diff_edges = make_diff_edges(diff_nodes,select_edges_1,select_edges_2)
-#print (diff_nodes)
 
 # Resort nodes according to linked index
 diff_nodes = resort_diff_nodes(diff_nodes)
 
-
-#for node_1 in nodes_indexed_1:
-#    for node_2 in nodes_indexed_2:
-#        if node_1[]
-
-
-#diff_ary = nodes_indexed_2[:,4] - nodes_indexed_1[:,4]
-#print (diff_ary)
-#exit()
-#nodes_indexed_diff = nodes_indexed_1
 
 # Print functions
 def node_file_print(in_name,nodes_indexed):
@@ -265,6 +238,3 @@ diff_edges_print(diff_edges,3)
 diff_nodes_print(diff_nodes,2)
 diff_edges_print(diff_edges,2)
 
-
-
-#print (indexed)
