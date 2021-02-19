@@ -5,43 +5,42 @@ import numpy as np
 
 """
 Code written Dec 2020.
-Reads in node and edge files created by encxfind script and produces .csv files
+Reads in node and edge files created by nodesmaker script and produces output files
 according to orbitals specified in the `orbitals` variable.
 Execute as: gephitailor ifci.out
-Output: nodes_select.csv, edges_select.csv
+Output: 
+- .csv for nodes_select and edges_select
+- .npy for nodes_select and edges_select
 """
 
 in_name = sys.argv[1]
 if in_name.endswith('.out'):
     in_name = in_name[:-4]
 
-#orbitals = []
-#for i,arg in enumerate(sys.argv):
-#    if i > 1:
-#        orbitals.append(int(arg))
-
-#orbitals = [21,20,18] # benzene pi space
-#orbitals = [21,20,19,18,17] # benzene pi space and two differently overlapping sigmas
-#orbitals = [21,20,18,19,17,16,15,14,13] # benzene C-C pi and sigma space
-#orbitals = [69,68,64,54] # fe por 3A2g main d orbitals and one sigN
-#orbitals = [69,68,64,54,53,52,51] # fe por all d orbitals
-#orbitals = list(range(44,70))
-#orbitals = [69,68,67,51] # fe por 3Eg main d orbitals and one sigN
-#print (orbitals)
-
 if in_name == 'a2g':
-    #orbitals = [69,68,64,54] # fe por 3A2g main d orbitals and one sigN
-    #orbitals = [69,68,64,54,53,52,51] # fe por 3A2g all d orbitals
-    orbitals = list(range(44,70))
+    orbitals = [69,68,64,54] # Fe porphyrin 3A2g main d orbitals and one sigN
+    #orbitals = [69,68,64,54,53,52,51] # Fe porphyrin 3A2g all d orbitals
+    #orbitals = list(range(44,70)) # Fe porphyrin 3A2g all orbitals
 elif in_name == 'e3g':
-    #orbitals = [69,68,67,51] # fe por 3Eg main d orbitals and one sigN
-    #orbitals = [69,68,67,54,53,52,51] # fe por 3Eg all d orbitals
-    orbitals = list(range(44,70))
+    orbitals = [69,68,67,51] # Fe porphyrin 3Eg main d orbitals and one sigN
+    #orbitals = [69,68,67,54,53,52,51] # Fe porphyrin 3Eg all d orbitals
+    #orbitals = list(range(44,70)) # Fe porphyrin 3Eg all orbitals
 elif in_name == 'a5g':
     orbitals = []
+elif in_name == 'benz':
+    orbitals = [21,20,18] # benzene pi space
+    #orbitals = [21,20,19,18,17] # benzene pi space and two differently overlapping sigmas
+    #orbitals = [21,20,18,19,17,16,15,14,13] # benzene C-C pi and sigma space
 else:
-    print ("Input name doesn't match any orbital sets.")
+    print ("Input name doesn't match any presaved orbital sets. Please specify orbitals.")
+    orb_count = int(input('Number of orbitals: '))
+    orbitals = []
+    for i in range(orb_count):
+        orb = input(('Orbital %s: ' % str(i+1)))
+        orbitals.append(orb)
     exit()
+
+print('orbitals:',orbitals)
 
 all_nodes = np.load((os.getcwd()+'/nodes_all_%s.npy' % in_name),allow_pickle=False)
 all_edges = np.load((os.getcwd()+'/edges_all_%s.npy' % in_name),allow_pickle=False)
@@ -55,16 +54,10 @@ for i,node in enumerate(all_nodes):
         if pick in node[4:8]:
             include += 1
     if include == node[2]:
-        #print ('found one:',node[3:8])
         select_nodes.append(node)
         select_node_names.append(node_names[i])
 
-#for i in all_nodes:
-#    print (i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7])
-
 node_search = np.transpose(np.asarray(select_nodes))[1]
-#print ('nodes include:\n',node_search.astype(int))
-#print ('nodes names include:\n',select_node_names)
 
 n = max(np.transpose(select_nodes)[:][2])
 n_body_counts = np.transpose(select_nodes)[:][2]
@@ -79,19 +72,13 @@ for i in range(len(select_nodes)):
 
 # Calculate node radial positions
 def calc_angle(bodies,index):
-    #angle = np.pi - (index*2*np.pi/bodies)
-    #angle = np.pi - (index*2*np.pi/bodies+2*np.pi/bodies)
-    #angle = index*2*np.pi/bodies
-    #angle = index*2*np.pi/bodies+2*np.pi/bodies
     angle = index*2*np.pi/bodies+np.pi/bodies
-    #print ('bodies:',bodies,'index:',index,'angle:',angle)
     return (angle)
 
 # Calculate node cartesian positions
 def calc_pos(r,angle):
     x_pos = r*np.cos(angle)
     y_pos = r*np.sin(angle)
-    #print ('r:',r,'angle:',angle,'x:',x_pos,'y:',y_pos)
     return(x_pos,y_pos)
 
 # Insert n-index, angles, and coordinates
@@ -104,7 +91,6 @@ index = 0
 for i,node in enumerate(select_nodes):
     if node[2] != old_node[2]: 
         index = 0
-    #print ('current node:',node[1:4])
     select_nodes[i][9] = index
     bodies_in_inc = nodes_per_body[int(node[2])-1]
     node_angle = calc_angle(bodies_in_inc,index) # bodies in inc and index
@@ -148,7 +134,6 @@ for i,node in enumerate(select_nodes):
     sig_check = np.sum(np.ma.masked_where(node[5:9] < 60, node[5:9]).mask) - (4 - node[2])
     select_nodes[i][13] = d_check
     select_nodes[i][14] = sig_check
-    #print ('node:',node[5:9],'d_check:',d_check,'sig_check',sig_check)
 sort_index = np.lexsort((select_nodes[:,8],select_nodes[:,7],select_nodes[:,6],select_nodes[:,5],\
                          select_nodes[:,14],select_nodes[:,13],select_nodes[:,2]))
 sorted_nodes = select_nodes[sort_index]
@@ -204,7 +189,6 @@ for i in range(len(header_node)):
     if i != len(header_node) - 1:
         node_file.write(',')
 node_file.write('\n')
-#for node,name in zip(sorted_nodes,sorted_node_names):
 for node in sorted_nodes:
     for col in node:
         node_file.write(str(col))
@@ -228,34 +212,4 @@ for edge in select_edges:
 
 np.save((os.getcwd()+'/nodes_select_%s.npy' % in_name),select_nodes,allow_pickle=False)
 np.save((os.getcwd()+'/edges_select_%s.npy' % in_name),select_edges,allow_pickle=False)
-
-exit()
-
-
-node_file = open('nodes_select_sorted_n2.csv','w')
-for i in range(len(header_node)):
-    node_file.write(header_node[i])
-    if i != len(header_node) - 1:
-        node_file.write(',')
-node_file.write('\n')
-for node in sorted_nodes:
-    if node[2] < 3:
-        for col in node:
-            node_file.write(str(col))
-            node_file.write(',')
-        node_file.write('\n')
-
-edge_file = open('edges_select_n2.csv','w')
-for i in range(len(header_edge)):
-    edge_file.write(header_edge[i])
-    if i != len(header_edge) - 1:
-        edge_file.write(',')
-edge_file.write('\n')
-for edge in select_edges:
-    if edge[3] < 3:
-        for i,col in enumerate(edge):
-            edge_file.write(str(col))
-            if i != len(edge) -1:
-                edge_file.write(',')
-        edge_file.write('\n')
 
